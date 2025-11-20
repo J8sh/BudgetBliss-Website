@@ -1,0 +1,349 @@
+/* Header Container */
+.header {
+  background-color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  width: 100%;
+}
+
+.header-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem 2rem;
+  gap: 2rem;
+  position: relative;
+}
+
+/* Logo Section - Left */
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  z-index: 1002;
+}
+
+.logo-image {
+  height: 40px;
+  width: 40px;
+  object-fit: contain;
+}
+
+.logo-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+/* Navigation Section - Center */
+.header-nav {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.nav-list {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 2rem;
+}
+
+.nav-item {
+  display: inline-block;
+}
+
+.nav-link {
+  text-decoration: none;
+  color: #4b5563;
+  font-size: 1rem;
+  font-weight: 500;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.nav-link:hover {
+  color: #2563eb;
+  background-color: #eff6ff;
+}
+
+.nav-link:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.nav-link.active {
+  color: #2563eb;
+  background-color: #dbeafe;
+}
+
+/* Account Section - Right */
+.header-account {
+  flex-shrink: 0;
+  z-index: 1002;
+}
+
+.account-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background-color: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.account-button:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+}
+
+.account-button:active {
+  transform: translateY(0);
+}
+
+.account-button:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.account-icon {
+  font-size: 1.25rem;
+}
+
+.account-text {
+  display: inline;
+}
+
+/* Mobile Account Button (inside menu) - Hidden on Desktop */
+.mobile-account-item {
+  display: none;
+}
+
+.mobile-account-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem;
+  background-color: transparent;
+  color: #4b5563;
+  border: none;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.mobile-account-button:hover {
+  background-color: #f3f4f6;
+}
+
+.mobile-account-button:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+/* Hamburger Menu Button - Hidden on Desktop */
+.hamburger-button {
+  display: none;
+  flex-direction: column;
+  justify-content: space-around;
+  width: 2rem;
+  height: 2rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  z-index: 1002;
+  position: relative;
+}
+
+.hamburger-button:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 4px;
+  border-radius: 0.25rem;
+}
+
+.hamburger-line {
+  width: 2rem;
+  height: 0.25rem;
+  background-color: #2563eb;
+  border-radius: 0.25rem;
+  transition: all 0.3s ease;
+  transform-origin: center;
+}
+
+.hamburger-button.active .hamburger-line:nth-child(1) {
+  transform: translateY(0.625rem) rotate(45deg);
+}
+
+.hamburger-button.active .hamburger-line:nth-child(2) {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.hamburger-button.active .hamburger-line:nth-child(3) {
+  transform: translateY(-0.625rem) rotate(-45deg);
+}
+
+/* Mobile Overlay */
+.mobile-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header-container {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .logo-text {
+    font-size: 1.25rem;
+  }
+
+  /* Show Hamburger Menu on Right */
+  .hamburger-button {
+    display: flex;
+    order: 4;
+    margin-left: auto;
+  }
+
+  /* Mobile Navigation - Slides from Left */
+  .header-nav {
+    position: fixed;
+    top: 0;
+    left: -100%;
+    width: 70%;
+    max-width: 300px;
+    height: 100vh;
+    background-color: #ffffff;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    transition: left 0.3s ease;
+    z-index: 1001;
+    padding-top: 5rem;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header-nav.mobile-open {
+    left: 0;
+  }
+
+  .nav-list {
+    flex-direction: column;
+    gap: 0;
+    align-items: stretch;
+    padding: 0 1rem;
+    height: 100%;
+    display: flex;
+  }
+
+  .nav-item {
+    width: 100%;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .nav-link {
+    display: block;
+    padding: 1rem;
+    font-size: 1rem;
+    text-align: left;
+    border-radius: 0;
+  }
+
+  .nav-link:hover {
+    background-color: #f3f4f6;
+  }
+
+  .nav-link.active {
+    background-color: #dbeafe;
+    border-left: 4px solid #2563eb;
+  }
+
+  /* Show mobile account button in menu */
+  .mobile-account-item {
+    display: block;
+    margin-top: auto;
+    border-top: 2px solid #e5e7eb;
+    border-bottom: none;
+  }
+
+  .mobile-account-button .account-icon {
+    font-size: 1.5rem;
+  }
+
+  /* Show overlay when menu is open */
+  .mobile-overlay {
+    display: block;
+  }
+
+  /* Hide desktop account button on mobile */
+  .header-account {
+    display: none;
+  }
+
+  /* Hamburger stays on right */
+  .hamburger-button {
+    display: flex;
+    order: 4;
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .header-container {
+    padding: 0.75rem;
+  }
+
+  .logo-text {
+    display: none;
+  }
+
+  .header-nav {
+    width: 80%;
+  }
+}
+
+/* Remove old mobile menu implementation */
+@media (max-width: 480px) {
+  .header-nav {
+    width: 85%;
+  }
+}
