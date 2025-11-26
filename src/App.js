@@ -4,15 +4,21 @@ import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import Login from './components/auth/Login';
 import Signup from './components/auth/Signup';
+import RecurringCharges from './features/recurring/RecurringCharges';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Dashboard component (shown when user is logged in)
 function Dashboard() {
   return (
-    <main className="App-main">
-      <h1>Welcome to BudgetBliss</h1>
-      <p>Your daily spending visualization tool</p>
-      <p className="dashboard-message">🎉 You're logged in! Dashboard coming soon...</p>
+    <main className="App-main dashboard">
+      <div className="dashboard-container">
+        <div className="dashboard-header">
+          <h1>Welcome to BudgetBliss</h1>
+          <p>Your daily spending visualization tool</p>
+        </div>
+        
+        <RecurringCharges />
+      </div>
     </main>
   );
 }
