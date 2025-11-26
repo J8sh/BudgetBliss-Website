@@ -27,3 +27,12 @@
   color: #6b7280;
   margin: 0;
 }
+
+.dashboard-message {
+  margin-top: 1.5rem !important;
+  padding: 1rem 2rem;
+  background-color: #e8f5e9;
+  border-radius: 8px;
+  color: #2e7d32;
+  font-weight: 500;
+}
