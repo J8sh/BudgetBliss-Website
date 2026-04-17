@@ -56,7 +56,7 @@ function isHeicBuffer(buffer: Buffer): boolean {
  */
 async function decodeHeic(buffer: Buffer): Promise<Buffer> {
   const arrayBuffer = await heicConvert({
-    buffer: Uint8Array.from(buffer),
+    buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
     format: "JPEG",
     quality: 1,
   });
