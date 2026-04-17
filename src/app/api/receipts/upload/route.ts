@@ -223,7 +223,10 @@ export async function POST(req: NextRequest) {
         : new Date(),
       paymentMethod: extractedData?.paymentMethod ?? undefined,
       cardLastFour: extractedData?.cardLastFour ?? undefined,
-      lineItems: extractedData?.lineItems ?? [],
+      lineItems: (extractedData?.lineItems ?? []).map((item) => ({
+        ...item,
+        description: item.description ?? undefined,
+      })),
       subtotal: extractedData?.subtotal ?? undefined,
       taxAmount: extractedData?.taxAmount ?? undefined,
       grandTotal: extractedData?.grandTotal ?? 0,
