@@ -6,7 +6,7 @@ services:
     container_name: budgetbliss
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - ./uploads:/app/uploads
     env_file:
