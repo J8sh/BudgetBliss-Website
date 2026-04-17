@@ -21,6 +21,13 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Never cache authenticated pages — prevents serving stale authed HTML to unauthenticated users
+        source: "/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)",
+        headers: [
+          { key: "Cache-Control", value: "no-store, must-revalidate" },
+        ],
+      },
     ];
   },
 };
