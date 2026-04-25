@@ -62,3 +62,33 @@ export const ReceiptListQuerySchema = z.object({
 });
 
 export type ReceiptListQuery = z.infer<typeof ReceiptListQuerySchema>;
+
+export const RECURRING_FREQUENCIES = ["weekly", "monthly", "quarterly", "yearly"] as const;
+
+export const CreateRecurringSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  amount: z.number().int().min(1, "Amount must be at least 1 cent"),
+  frequency: z.enum(RECURRING_FREQUENCIES),
+  category: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type CreateRecurringInput = z.infer<typeof CreateRecurringSchema>;
+
+export const UpdateRecurringSchema = CreateRecurringSchema.partial();
+
+export const INCOME_CATEGORIES = ["employment", "freelance", "investments", "passive", "other"] as const;
+
+export const CreateIncomeSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  amount: z.number().int().min(1, "Amount must be at least 1 cent"),
+  frequency: z.enum(RECURRING_FREQUENCIES),
+  category: z.enum(INCOME_CATEGORIES).optional(),
+  notes: z.string().trim().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type CreateIncomeInput = z.infer<typeof CreateIncomeSchema>;
+
+export const UpdateIncomeSchema = CreateIncomeSchema.partial();

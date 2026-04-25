@@ -21,7 +21,6 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
 
   const startCamera = useCallback(async () => {
-    setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -41,7 +40,11 @@ export function CameraCapture({ onCapture, disabled }: CameraCaptureProps) {
   }, []);
 
   useEffect(() => {
-    if (isOpen) startCamera();
+    if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError(null); // reset stale error when camera reopens
+      void startCamera();
+    }
     return () => stopCamera();
   }, [isOpen, startCamera, stopCamera]);
 

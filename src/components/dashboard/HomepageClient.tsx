@@ -9,7 +9,12 @@ import { SpendAreaChart } from "@/components/dashboard/SpendAreaChart";
 import { TopStoresChart } from "@/components/dashboard/CategoryPieChart";
 import { TopStoresListBlock } from "@/components/dashboard/TopStoresListBlock";
 import { RecentReceiptsBlock } from "@/components/dashboard/RecentReceiptsBlock";
+import { RecurringCostsBlock } from "@/components/dashboard/RecurringCostsBlock";
+import { IncomeSourcesBlock } from "@/components/dashboard/IncomeSourcesBlock";
+import { NetMonthlyBlock } from "@/components/dashboard/NetMonthlyBlock";
 import { useStats } from "@/hooks/useStats";
+import { useRecurring } from "@/hooks/useRecurring";
+import { useIncome } from "@/hooks/useIncome";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -29,6 +34,8 @@ function getFormattedDate(): string {
 
 export function HomepageClient() {
   const { data, isLoading } = useStats();
+  const { summary: recurringSummary, isLoading: recurringLoading } = useRecurring();
+  const { summary: incomeSummary, isLoading: incomeLoading } = useIncome();
 
   const summary = data?.summary;
   const dailySpend = data?.dailySpend ?? [];
@@ -54,12 +61,23 @@ export function HomepageClient() {
         </div>
       </div>
 
-      {/* Stat Cards */}
+      {/* Spending Stat Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatBlock title="Today" value={summary?.today ?? 0} isLoading={isLoading} />
         <StatBlock title="This Week" value={summary?.week ?? 0} isLoading={isLoading} />
         <StatBlock title="This Month" value={summary?.month ?? 0} isLoading={isLoading} />
         <StatBlock title="This Year" value={summary?.year ?? 0} isLoading={isLoading} />
+      </div>
+
+      {/* Financial Health Row */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatBlock title="Monthly Recurring" value={recurringSummary?.monthlyTotal ?? 0} isLoading={recurringLoading} />
+        <StatBlock title="Monthly Income" value={incomeSummary?.monthlyTotal ?? 0} isLoading={incomeLoading} />
+        <NetMonthlyBlock
+          incomeMonthly={incomeSummary?.monthlyTotal ?? 0}
+          recurringMonthly={recurringSummary?.monthlyTotal ?? 0}
+          isLoading={incomeLoading || recurringLoading}
+        />
       </div>
 
       {/* Charts Row */}
@@ -83,6 +101,16 @@ export function HomepageClient() {
       {/* Recent Receipts */}
       <div>
         <RecentReceiptsBlock />
+      </div>
+
+      {/* Recurring Costs */}
+      <div>
+        <RecurringCostsBlock />
+      </div>
+
+      {/* Income */}
+      <div>
+        <IncomeSourcesBlock />
       </div>
     </div>
   );

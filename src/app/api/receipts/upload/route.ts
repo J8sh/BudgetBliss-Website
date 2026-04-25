@@ -15,6 +15,7 @@ import { extractReceiptData, NotAReceiptError, ClaudeApiError } from "@/lib/api/
 import { logger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { startOfDay, endOfDay } from "@/lib/utils/dates";
+import mongoose from "mongoose";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -231,7 +232,7 @@ export async function POST(req: NextRequest) {
       taxAmount: extractedData?.taxAmount ?? undefined,
       grandTotal: extractedData?.grandTotal ?? 0,
       isDuplicate,
-      duplicateOf: duplicateOf ? new (require("mongoose").Types.ObjectId)(duplicateOf) : undefined,
+      duplicateOf: duplicateOf ? new mongoose.Types.ObjectId(duplicateOf) : undefined,
     };
 
     const receipt = await Receipt.create(receiptData);

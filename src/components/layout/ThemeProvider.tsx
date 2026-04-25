@@ -56,19 +56,15 @@ export function ThemeProvider({
   children,
   defaultTheme = "system",
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(defaultTheme);
-
-  // Sync from localStorage on mount (client only — avoids SSR hydration mismatch)
-  useEffect(() => {
+  const [theme, setThemeState] = useState<Theme>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
-      if (stored === "light" || stored === "dark" || stored === "system") {
-        setThemeState(stored);
-      }
+      if (stored === "light" || stored === "dark" || stored === "system") return stored;
     } catch {
-      // localStorage unavailable
+      // localStorage unavailable in SSR or restricted contexts
     }
-  }, []);
+    return defaultTheme;
+  });
 
   // Apply theme class whenever theme changes
   useEffect(() => {
@@ -104,6 +100,7 @@ export function ThemeProvider({
        * <head> during SSR and returns null on the client, so React 19 never
        * sees a <script> element in the component tree.
        */}
+      {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
       <Script
         id="theme-init"
         strategy="beforeInteractive"

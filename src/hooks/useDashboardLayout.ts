@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { DashboardBlockLayout, BlockId } from "@/types/dashboard";
+import type { DashboardBlockLayout } from "@/types/dashboard";
 
 /** Default block layout — used when user has no saved layout yet */
 export const DEFAULT_LAYOUT: DashboardBlockLayout[] = [
@@ -13,6 +13,11 @@ export const DEFAULT_LAYOUT: DashboardBlockLayout[] = [
   { i: "category-pie-chart", x: 8, y: 3, w: 4, h: 5, minW: 3, minH: 4 },
   { i: "recent-receipts", x: 0, y: 8, w: 8, h: 4, minW: 4, minH: 3 },
   { i: "top-stores", x: 8, y: 8, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "recurring-monthly", x: 0, y: 12, w: 3, h: 3, minW: 2, minH: 2 },
+  { i: "recurring-list", x: 3, y: 12, w: 9, h: 5, minW: 4, minH: 3 },
+  { i: "income-monthly", x: 0, y: 17, w: 3, h: 3, minW: 2, minH: 2 },
+  { i: "net-monthly", x: 3, y: 17, w: 3, h: 3, minW: 2, minH: 2 },
+  { i: "income-list", x: 6, y: 17, w: 6, h: 5, minW: 4, minH: 3 },
 ];
 
 interface UseDashboardLayoutResult {

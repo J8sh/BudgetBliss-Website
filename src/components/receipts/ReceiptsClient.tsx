@@ -22,6 +22,7 @@ export function ReceiptsClient() {
   const [data, setData] = useState<PaginatedReceipts | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const searchParamsString = searchParams.toString();
   const currentQuery = Object.fromEntries(searchParams.entries());
 
   const fetchReceipts = useCallback(async (query: Record<string, string>) => {
@@ -40,8 +41,8 @@ export function ReceiptsClient() {
   }, []);
 
   useEffect(() => {
-    void fetchReceipts(currentQuery);
-  }, [searchParams.toString()]);
+    void fetchReceipts(Object.fromEntries(searchParams.entries()));
+  }, [searchParamsString, fetchReceipts, searchParams]);
 
   function handleQueryChange(params: Record<string, string>) {
     const url = new URLSearchParams(

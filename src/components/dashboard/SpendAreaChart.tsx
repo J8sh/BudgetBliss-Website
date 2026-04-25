@@ -10,7 +10,7 @@ import {
   Tooltip,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, fromCents } from "@/lib/utils/currency";
+import { fromCents, formatCurrency } from "@/lib/utils/currency";
 import type { DailySpend } from "@/types/stats";
 
 interface SpendAreaChartProps {
@@ -25,7 +25,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
   return (
     <div className="rounded-lg border border-border bg-card p-3 shadow-md text-sm">
       <p className="font-medium text-foreground">{label}</p>
-      <p className="text-primary tabular-nums">{value != null ? formatCurrency(value) : "—"}</p>
+      <p className="text-primary tabular-nums">{value != null ? formatCurrency(Math.round(value * 100)) : "—"}</p>
     </div>
   );
 }

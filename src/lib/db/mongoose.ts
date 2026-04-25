@@ -6,7 +6,6 @@ const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 2000;
 
 declare global {
-  // eslint-disable-next-line no-var
   var __mongooseConnection: Promise<typeof mongoose> | undefined;
 }
 

@@ -61,7 +61,8 @@ export function HistoryClient() {
     }
   }
 
-  useEffect(() => { void fetchHistory(dateFrom, dateTo); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void fetchHistory(dateFrom, dateTo); }, []); // mount-only: subsequent fetches triggered by "Apply" button
 
   function applyQuickFilter(from: Date, to: Date) {
     const f = toISODateString(from);

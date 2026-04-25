@@ -9,8 +9,13 @@ import { SpendChart } from "./SpendChart";
 import { TopStoresChart } from "./CategoryPieChart";
 import { RecentReceiptsBlock } from "./RecentReceiptsBlock";
 import { TopStoresListBlock } from "./TopStoresListBlock";
+import { RecurringCostsBlock } from "./RecurringCostsBlock";
+import { IncomeSourcesBlock } from "./IncomeSourcesBlock";
+import { NetMonthlyBlock } from "./NetMonthlyBlock";
 import { useDashboardLayout } from "@/hooks/useDashboardLayout";
 import { useStats } from "@/hooks/useStats";
+import { useRecurring } from "@/hooks/useRecurring";
+import { useIncome } from "@/hooks/useIncome";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import type { DashboardBlockLayout, BlockId } from "@/types/dashboard";
 
@@ -21,6 +26,8 @@ export function DashboardGrid() {
   const { width: containerWidth, containerRef } = useContainerWidth();
   const { layout, isLoading: layoutLoading, isSaving, updateLayout } = useDashboardLayout();
   const { data: stats, isLoading: statsLoading } = useStats();
+  const { summary: recurringSummary, isLoading: recurringLoading } = useRecurring();
+  const { summary: incomeSummary, isLoading: incomeLoading } = useIncome();
   const [isEditMode, setIsEditMode] = useState(false);
 
   function handleLayoutChange(newLayout: Layout) {
@@ -92,6 +99,37 @@ export function DashboardGrid() {
         return <RecentReceiptsBlock />;
       case "top-stores":
         return <TopStoresListBlock stores={stats?.topStores ?? []} isLoading={isLoading} />;
+      case "recurring-monthly":
+        return (
+          <StatBlock
+            title="Monthly Recurring"
+            value={recurringSummary?.monthlyTotal ?? 0}
+            isLoading={recurringLoading}
+            dragHandleClassName={DRAG_HANDLE}
+          />
+        );
+      case "recurring-list":
+        return <RecurringCostsBlock dragHandleClassName={DRAG_HANDLE} />;
+      case "income-monthly":
+        return (
+          <StatBlock
+            title="Monthly Income"
+            value={incomeSummary?.monthlyTotal ?? 0}
+            isLoading={incomeLoading}
+            dragHandleClassName={DRAG_HANDLE}
+          />
+        );
+      case "net-monthly":
+        return (
+          <NetMonthlyBlock
+            incomeMonthly={incomeSummary?.monthlyTotal ?? 0}
+            recurringMonthly={recurringSummary?.monthlyTotal ?? 0}
+            isLoading={incomeLoading || recurringLoading}
+            dragHandleClassName={DRAG_HANDLE}
+          />
+        );
+      case "income-list":
+        return <IncomeSourcesBlock dragHandleClassName={DRAG_HANDLE} />;
       default:
         return null;
     }

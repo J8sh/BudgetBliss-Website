@@ -19,24 +19,27 @@ export function FileUploadZone({ onFileSelect, disabled }: FileUploadZoneProps) 
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  function validateAndSelect(file: File) {
-    setError(null);
+  const validateAndSelect = useCallback(
+    (file: File) => {
+      setError(null);
 
-    if (!ACCEPTED_TYPES.includes(file.type)) {
-      setError("Unsupported file type. Please upload a JPEG, PNG, WebP, or HEIC image.");
-      return;
-    }
+      if (!ACCEPTED_TYPES.includes(file.type)) {
+        setError("Unsupported file type. Please upload a JPEG, PNG, WebP, or HEIC image.");
+        return;
+      }
 
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`File too large. Maximum size is ${MAX_SIZE_MB} MB.`);
-      return;
-    }
+      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        setError(`File too large. Maximum size is ${MAX_SIZE_MB} MB.`);
+        return;
+      }
 
-    setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-    onFileSelect(file);
-  }
+      setSelectedFile(file);
+      const url = URL.createObjectURL(file);
+      setPreview(url);
+      onFileSelect(file);
+    },
+    [onFileSelect],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -46,7 +49,7 @@ export function FileUploadZone({ onFileSelect, disabled }: FileUploadZoneProps) 
       const file = e.dataTransfer.files[0];
       if (file) validateAndSelect(file);
     },
-    [disabled],
+    [disabled, validateAndSelect],
   );
 
   function handleClear() {

@@ -17,6 +17,22 @@ import {
 import { formatCurrency } from "@/lib/utils/currency";
 import type { Receipt } from "@/types/receipt";
 
+interface SortIconProps {
+  field: string;
+  currentQuery: Record<string, string>;
+}
+
+function SortIcon({ field, currentQuery }: SortIconProps) {
+  if (currentQuery["sortBy"] !== field) {
+    return <ArrowUpDown className="h-3 w-3 ml-1 text-muted-foreground" />;
+  }
+  return (
+    <ArrowUpDown
+      className={`h-3 w-3 ml-1 ${currentQuery["sortOrder"] === "asc" ? "rotate-180" : ""} text-primary`}
+    />
+  );
+}
+
 interface ReceiptTableProps {
   receipts: Receipt[];
   pagination: {
@@ -50,17 +66,6 @@ export function ReceiptTable({
     const isCurrent = currentQuery["sortBy"] === field;
     const nextOrder = isCurrent && currentQuery["sortOrder"] === "asc" ? "desc" : "asc";
     onQueryChange({ ...currentQuery, sortBy: field, sortOrder: nextOrder, page: "1" });
-  }
-
-  function SortIcon({ field }: { field: string }) {
-    if (currentQuery["sortBy"] !== field) {
-      return <ArrowUpDown className="h-3 w-3 ml-1 text-muted-foreground" />;
-    }
-    return (
-      <ArrowUpDown
-        className={`h-3 w-3 ml-1 ${currentQuery["sortOrder"] === "asc" ? "rotate-180" : ""} text-primary`}
-      />
-    );
   }
 
   return (
@@ -101,18 +106,18 @@ export function ReceiptTable({
             <TableRow className="bg-muted/50">
               <TableHead>
                 <button className="flex items-center font-medium" onClick={() => toggleSort("storeName")}>
-                  Store <SortIcon field="storeName" />
+                  Store <SortIcon field="storeName" currentQuery={currentQuery} />
                 </button>
               </TableHead>
               <TableHead>
                 <button className="flex items-center font-medium" onClick={() => toggleSort("receiptDate")}>
-                  Date <SortIcon field="receiptDate" />
+                  Date <SortIcon field="receiptDate" currentQuery={currentQuery} />
                 </button>
               </TableHead>
               <TableHead>Payment</TableHead>
               <TableHead>
                 <button className="flex items-center font-medium" onClick={() => toggleSort("grandTotal")}>
-                  Total <SortIcon field="grandTotal" />
+                  Total <SortIcon field="grandTotal" currentQuery={currentQuery} />
                 </button>
               </TableHead>
               <TableHead>Status</TableHead>

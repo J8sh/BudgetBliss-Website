@@ -6,7 +6,12 @@ export type BlockId =
   | "spend-line-chart"
   | "category-pie-chart"
   | "recent-receipts"
-  | "top-stores";
+  | "top-stores"
+  | "recurring-monthly"
+  | "recurring-list"
+  | "income-monthly"
+  | "net-monthly"
+  | "income-list";
 
 export interface DashboardBlockLayout {
   i: BlockId;
