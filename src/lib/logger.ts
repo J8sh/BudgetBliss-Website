@@ -5,6 +5,11 @@ const isDev = process.env.NODE_ENV === "development";
 export const logger = pino(
   {
     level: isDev ? "debug" : "info",
+    serializers: {
+      // pino only auto-serializes errors under the key "err"; "error" needs explicit serializer
+      error: pino.stdSerializers.err,
+      err: pino.stdSerializers.err,
+    },
     redact: {
       // Never log secrets
       paths: ["*.password", "*.apiKey", "*.secret", "*.token"],
