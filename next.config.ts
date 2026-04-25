@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   // Sharp and mongoose run server-side only
-  serverExternalPackages: ["mongoose", "sharp", "pino", "pino-pretty"],
+  serverExternalPackages: ["mongoose", "sharp", "pino", "pino-pretty", "heic-convert", "heic-decode", "libheif-js"],
 
   // Security headers
   async headers() {
