@@ -95,6 +95,16 @@ return NextResponse.json({ error: "Internal server error", code: "INTERNAL_ERROR
 - `'failed'` — Claude API error or total parse failure
 - `'manual'` — admin entered by hand
 
+## Before Marking Any Task Complete
+
+Run all three in order and fix any failures before reporting done:
+
+```bash
+npm run build   # TypeScript type check + production build must pass
+npm run lint    # ESLint must pass with zero errors
+npm test        # All tests must pass
+```
+
 ## File Structure Quick Map
 ```
 src/lib/models/     — Mongoose schemas (Receipt, User)
