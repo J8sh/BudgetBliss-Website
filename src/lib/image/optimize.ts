@@ -56,7 +56,9 @@ function isHeicBuffer(buffer: Buffer): boolean {
  */
 async function decodeHeic(buffer: Buffer): Promise<Buffer> {
   const arrayBuffer = await heicConvert({
-    buffer: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer,
+    // heic-decode calls .slice() on this expecting a Uint8Array (iterable).
+    // Passing buffer.buffer (ArrayBuffer) breaks because ArrayBuffer.slice() is not iterable.
+    buffer: new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength),
     format: "JPEG",
     quality: 1,
   });
