@@ -41,7 +41,8 @@ yarn-error.log*
 next-env.d.ts
 
 # App-specific
-uploads/
+uploads/*
+!uploads/.gitkeep
 .env.local
 .env.*.local
 coverage/
