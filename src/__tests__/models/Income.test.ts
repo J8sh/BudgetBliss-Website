@@ -46,6 +46,7 @@ describe("Income model", () => {
   });
 
   it("rejects invalid frequency", async () => {
+    // @ts-expect-error -- deliberately invalid frequency
     await expect(Income.create({ ...valid, frequency: "biweekly" })).rejects.toThrow();
   });
 
@@ -59,6 +60,7 @@ describe("Income model", () => {
   });
 
   it("rejects invalid category", async () => {
+    // @ts-expect-error -- deliberately invalid category
     await expect(Income.create({ ...valid, category: "unknown" })).rejects.toThrow();
   });
 
