@@ -46,6 +46,7 @@ describe("RecurringCost model", () => {
   });
 
   it("rejects invalid frequency", async () => {
+    // @ts-expect-error -- deliberately invalid frequency
     await expect(RecurringCost.create({ ...valid, frequency: "biweekly" })).rejects.toThrow();
   });
 
