@@ -6,6 +6,12 @@ export interface UserDoc extends Document {
   passwordHash: string;
   dashboardLayout: DashboardBlockLayout[];
   theme: Theme;
+  twoFactorEnabled: boolean;
+  totpSecretEnc?: string;
+  totpPendingSecretEnc?: string;
+  totpPendingCreatedAt?: Date;
+  totpLastStep?: number;
+  recoveryCodeHashes: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +53,17 @@ const userSchema = new Schema<UserDoc>(
       enum: ["light", "dark", "system"],
       default: "system",
     },
+    // Two-factor login (TOTP). Secrets are encrypted with lib/auth/secretBox and never selected by default.
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    totpSecretEnc: { type: String, select: false },
+    totpPendingSecretEnc: { type: String, select: false },
+    totpPendingCreatedAt: { type: Date, select: false },
+    // Last time step a code was accepted for, so the same code can't be used twice
+    totpLastStep: { type: Number, select: false },
+    recoveryCodeHashes: { type: [String], default: [], select: false },
   },
   { timestamps: true },
 );

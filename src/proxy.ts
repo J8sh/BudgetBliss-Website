@@ -10,7 +10,6 @@ export default auth((req) => {
     pathname.startsWith("/login") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/uploads") ||
     pathname === "/favicon.ico";
 
   if (!isLoggedIn && !isPublicPath) {
@@ -28,5 +27,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|uploads).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
