@@ -55,7 +55,7 @@ export function RecentReceiptsBlock() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{r.storeName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(r.receiptDate).toLocaleDateString()}
+                    {new Date(r.receiptDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">

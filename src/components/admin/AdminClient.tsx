@@ -171,7 +171,7 @@ export function AdminClient() {
                 >
                   <TableCell className="font-medium">{r.storeName}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {new Date(r.receiptDate).toLocaleDateString()}
+                    {new Date(r.receiptDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                   </TableCell>
                   <TableCell className="tabular-nums">{formatCurrency(r.grandTotal)}</TableCell>
                   <TableCell>

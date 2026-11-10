@@ -142,7 +142,7 @@ export function ReceiptTable({
                 <TableRow key={receipt._id} className="hover:bg-muted/30 transition-colors">
                   <TableCell className="font-medium">{receipt.storeName}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {new Date(receipt.receiptDate).toLocaleDateString()}
+                    {new Date(receipt.receiptDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                   </TableCell>
                   <TableCell className="text-sm capitalize text-muted-foreground">
                     {receipt.paymentMethod ?? "—"}
