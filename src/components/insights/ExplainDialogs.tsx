@@ -99,7 +99,9 @@ export function MoneyFlowDialog({ open, onOpenChange, report }: ExplainDialogPro
               <dd className="text-muted-foreground">
                 Every receipt dated this month, whether photographed, typed in or imported from a statement.
                 {report.coverage.matchedToFixed > 0 &&
-                  ` ${report.coverage.matchedToFixed} imported bank charge${report.coverage.matchedToFixed === 1 ? " matches" : "es match"} a recurring bill's amount, so ${report.coverage.matchedToFixed === 1 ? "it's" : "they're"} counted once, as the bill.`}
+                  ` ${report.coverage.matchedToFixed} bank charge${report.coverage.matchedToFixed === 1 ? " is" : "s are"} a recurring bill, so ${report.coverage.matchedToFixed === 1 ? "it's" : "they're"} counted once, as the bill.`}
+                {report.coverage.transfers.count > 0 &&
+                  ` ${report.coverage.transfers.count} card payment${report.coverage.transfers.count === 1 ? "" : "s"} and transfer${report.coverage.transfers.count === 1 ? "" : "s"} (${formatWholeDollars(report.coverage.transfers.total)}) aren't counted: the purchases behind a card payment come from the card's own statement, and money moved to savings isn't spent.`}
               </dd>
             </div>
             <div>

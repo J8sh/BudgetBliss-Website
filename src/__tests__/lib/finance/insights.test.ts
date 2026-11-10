@@ -1,5 +1,5 @@
 import type { SpendReceipt } from "@/lib/finance/allocate";
-import type { CategoryId } from "@/lib/finance/categories";
+import type { CategoryId, StoreChoice } from "@/lib/finance/categories";
 import {
   addMonths,
   buildInsightsReport,
@@ -55,7 +55,7 @@ describe("buildInsightsReport", () => {
     r("2026-09-06", "Starbucks Coffee #2", 700),
     r("2026-09-07", "Starbucks Coffee", 500),
     r("2026-09-12", "Fox & Hound", 9000),
-    r("2026-09-20", "Overland Park", 3000),
+    r("2026-09-20", "Riverside Plaza", 3000),
     r("2026-09-21", "Casey's", 4000),
     r("2026-09-22", "Casey's", 500),
   ];
@@ -135,7 +135,7 @@ describe("buildInsightsReport", () => {
   });
 
   it("applies your store choices", () => {
-    const rules = new Map<string, CategoryId>([["overland park", "gifts"]]);
+    const rules = new Map<string, CategoryId>([["riverside plaza", "gifts"]]);
     const { categories } = buildInsightsReport(input({ receipts, rules }));
     expect(categories.find((c) => c.key === "uncategorized")).toBeUndefined();
     expect(categories.find((c) => c.key === "gifts")?.total).toBe(3000);
@@ -146,6 +146,27 @@ describe("buildInsightsReport", () => {
     const report = buildInsightsReport(input({ receipts: withRent }));
     expect(report.money.flexible).toBe(43300);
     expect(report.coverage.matchedToFixed).toBe(1);
+  });
+
+  it("leaves transfers and marked bills out of spending, habits and biggest purchases", () => {
+    const withBank = [
+      ...receipts,
+      r("2026-09-10", "DISCOVER E-PAYMENT 1234", 50000, { tags: ["bank-import"] }),
+      r("2026-09-12", "HSA - UMB BANK HSA Cont HSA - UMB Bank", 200000, { tags: ["bank-import"] }),
+      r("2026-09-02", "Maple Apartments SIGONFILE DRSS", 90000, { tags: ["bank-import"] }),
+      r("2026-09-19", "EVERGY METRO AUTOPAY 532139873232", 9000, { tags: ["bank-import"] }),
+    ];
+    const rules = new Map<string, StoreChoice>([
+      ["maple apartments sigonfile", "bill"],
+      ["evergy metro autopay", "bill"],
+    ]);
+    const report = buildInsightsReport(input({ receipts: withBank, rules }));
+    expect(report.money.flexible).toBe(43300);
+    expect(report.receiptCount).toBe(8);
+    expect(report.coverage.transfers).toEqual({ count: 2, total: 250000 });
+    expect(report.coverage.matchedToFixed).toBe(2);
+    expect(report.habits.biggest.map((b) => b.amount)).toEqual([25000, 9000, 4000]);
+    expect(report.categories.find((c) => c.key === "uncategorized")?.flexible).toBe(3000);
   });
 
   it("handles no income", () => {

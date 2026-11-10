@@ -13,6 +13,8 @@ import {
 } from "@/lib/csv/formats";
 import { guessBankMapping, readBankRows, validateBankMapping } from "@/lib/csv/bankStatement";
 import { BANK_MATCH_WINDOW_DAYS } from "@/lib/csv/bankMatch";
+import { guessMerchant, isExclusion } from "@/lib/finance/categories";
+import { loadRules } from "@/lib/finance/loadInsights";
 import { Receipt } from "@/lib/models/Receipt";
 import { Income } from "@/lib/models/Income";
 import { RecurringCost } from "@/lib/models/RecurringCost";
@@ -544,10 +546,19 @@ async function planBank(
   );
 
   const imported = await receiptsByImportKey(keys.filter((k): k is string => k !== null));
-  const nearby = await loadReceiptsBetween(
-    purchases.flatMap((r) => (r ? [r.date] : [])),
-    BANK_MATCH_WINDOW_DAYS,
-  );
+  const rules = await loadRules();
+  const isNotSpending = (description: string) => {
+    const merchant = guessMerchant(description);
+    const rule = rules.get(merchant.key);
+    return isExclusion(rule) ? rule : rule ? undefined : merchant.excluded;
+  };
+  // A card payment or other transfer already in the database can't stand in for a purchase
+  const nearby = (
+    await loadReceiptsBetween(
+      purchases.flatMap((r) => (r ? [r.date] : [])),
+      BANK_MATCH_WINDOW_DAYS,
+    )
+  ).filter((e) => !isNotSpending(e.storeName));
   // Each existing receipt can stand in for only one statement row; exact matches claim theirs first
   const claimed = new Set<string>([...imported.values()].map((r) => r._id.toString()));
 
@@ -566,6 +577,23 @@ async function planBank(
       description: r.description,
       amountCents: r.spendingCents,
     };
+
+    // Money moved rather than spent (card payments, savings), or a bill already on the recurring list
+    const exclusion = isNotSpending(r.description);
+    if (exclusion) {
+      const rule = rules.get(guessMerchant(r.description).key);
+      return {
+        ...base,
+        status: "skip",
+        message:
+          exclusion === "bill"
+            ? "Already counted as a recurring bill"
+            : rule
+              ? "You marked this as not spending"
+              : "Looks like a card payment or transfer, so it isn't spending",
+      };
+    }
+
     const key = keys[i]!;
     const already = imported.get(key);
     if (already) {
@@ -573,11 +601,16 @@ async function planBank(
     }
 
     const rowTime = new Date(r.date).getTime();
+    // A photo or typed-in receipt names the store differently from the bank, so the amount and date
+    // decide. Two bank rows (say, from your card and your checking account) are only the same purchase
+    // if they're also from the same store: a $20 snack isn't a $20 subscription.
+    const rowMerchant = guessMerchant(r.description).key;
     const match = nearby.find(
       (e) =>
         !claimed.has(e._id.toString()) &&
         e.grandTotal === r.spendingCents &&
-        Math.abs(e.receiptDate.getTime() - rowTime) <= BANK_MATCH_WINDOW_DAYS * DAY_MS,
+        Math.abs(e.receiptDate.getTime() - rowTime) <= BANK_MATCH_WINDOW_DAYS * DAY_MS &&
+        (!e.importKey || guessMerchant(e.storeName).key === rowMerchant),
     );
 
     if (match) {

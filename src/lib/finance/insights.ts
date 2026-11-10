@@ -5,6 +5,7 @@ import {
   categoryLabel,
   type CategoryId,
   type CategoryKey,
+  type StoreChoice,
 } from "@/lib/finance/categories";
 import type {
   CategoryTotal,
@@ -47,7 +48,7 @@ export interface InsightsInput {
   /** Receipts from at least the 12 months ending with `month` */
   receipts: SpendReceipt[];
   /** Your store → category choices, keyed by merchant key */
-  rules: ReadonlyMap<string, CategoryId>;
+  rules: ReadonlyMap<string, StoreChoice>;
   recurring: RecurringInput[];
   income: IncomeInput[];
   /** Receipts in `month` whose photo couldn't be read */
@@ -103,6 +104,10 @@ const percent = (share: number) => `${Math.round(share * 100)}%`;
 
 interface MonthBucket {
   receipts: SpendReceipt[];
+  /** Receipts that count as day-to-day spending (not transfers, not already-counted bills) */
+  spending: SpendReceipt[];
+  /** Card payments, savings and other money moved rather than spent */
+  transfers: { count: number; total: number };
   flexibleByCategory: Map<CategoryKey, number>;
   merchantByCategory: Map<CategoryKey, Map<string, MerchantTotal>>;
   purchases: PurchaseRef[];
@@ -130,6 +135,8 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
   for (const m of trendMonths) {
     buckets.set(m, {
       receipts: [],
+      spending: [],
+      transfers: { count: 0, total: 0 },
       flexibleByCategory: new Map(),
       merchantByCategory: new Map(),
       purchases: [],
@@ -143,6 +150,17 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
     // A bank-imported charge for the same amount as a recurring cost is that cost, already counted as fixed
     const unmatchedFixed = fixedItems.filter((f) => f.monthly > 0).map((f) => f.monthly);
     for (const r of bucket.receipts) {
+      const allocation = allocateReceipt(r, rules);
+      if (allocation.excluded === "transfer") {
+        bucket.transfers.count++;
+        bucket.transfers.total += r.grandTotal;
+        continue;
+      }
+      if (allocation.excluded === "bill") {
+        bucket.matchedToFixed++;
+        continue;
+      }
+
       if (r.tags.includes("bank-import")) {
         const i = unmatchedFixed.findIndex((amount) => Math.abs(amount - r.grandTotal) <= Math.max(100, amount * 0.01));
         if (i >= 0) {
@@ -152,7 +170,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
         }
       }
 
-      const allocation = allocateReceipt(r, rules);
+      bucket.spending.push(r);
       for (const part of allocation.parts) {
         bucket.flexibleByCategory.set(part.category, (bucket.flexibleByCategory.get(part.category) ?? 0) + part.amount);
         const merchants = bucket.merchantByCategory.get(part.category) ?? new Map<string, MerchantTotal>();
@@ -178,7 +196,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
   const previous = buckets.get(previousMonth)!;
   const averageMonths = trendMonths
     .slice(TREND_MONTHS - 1 - AVERAGE_MONTHS, TREND_MONTHS - 1)
-    .filter((m) => buckets.get(m)!.receipts.length > 0);
+    .filter((m) => buckets.get(m)!.spending.length > 0);
 
   const categoryTotalIn = (m: string, key: CategoryKey) =>
     (buckets.get(m)!.flexibleByCategory.get(key) ?? 0) + (fixedByCategory.get(key) ?? 0);
@@ -281,7 +299,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
   const pace = isCurrentMonth
     ? {
         spentSoFar: current.flexible,
-        sameDayLastMonth: previous.receipts
+        sameDayLastMonth: previous.spending
           .filter((r) => r.receiptDate.getUTCDate() <= Math.min(daysElapsed, daysInMonth(previousMonth)))
           .reduce((s, r) => s + r.grandTotal, 0),
         lastMonthTotal: previous.flexible,
@@ -291,14 +309,14 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
 
   // ─── Habits ────────────────────────────────────────────────────────────────
   const visitsByMerchant = new Map<string, MerchantTotal>();
-  for (const r of current.receipts) {
+  for (const r of current.spending) {
     const allocation = allocateReceipt(r, rules);
     const m = visitsByMerchant.get(allocation.merchant.key) ?? { key: allocation.merchant.key, name: allocation.merchant.name, total: 0, visits: 0 };
     m.total += r.grandTotal;
     m.visits += 1;
     visitsByMerchant.set(m.key, m);
   }
-  const small = current.receipts.filter((r) => r.grandTotal > 0 && r.grandTotal < SMALL_PURCHASE_CENTS);
+  const small = current.spending.filter((r) => r.grandTotal > 0 && r.grandTotal < SMALL_PURCHASE_CENTS);
   const habits = {
     topMerchants: [...visitsByMerchant.values()]
       .filter((m) => m.visits >= 2)
@@ -306,7 +324,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
       .slice(0, 5)
       .map((m) => ({ ...m, average: Math.round(m.total / m.visits) })),
     smallPurchases: { threshold: SMALL_PURCHASE_CENTS, count: small.length, total: small.reduce((s, r) => s + r.grandTotal, 0) },
-    biggest: [...current.receipts]
+    biggest: [...current.spending]
       .sort((a, b) => b.grandTotal - a.grandTotal)
       .slice(0, 3)
       .map((r) => ({
@@ -333,6 +351,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
     uncategorizedMerchants: uncategorized?.topMerchants.length ?? 0,
     needsReview: input.needsReview,
     matchedToFixed: current.matchedToFixed,
+    transfers: current.transfers,
   };
 
   const report: Omit<InsightsReport, "insights"> = {
@@ -341,7 +360,7 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
     isCurrentMonth,
     daysElapsed,
     daysInMonth: dim,
-    receiptCount: current.receipts.length,
+    receiptCount: current.spending.length,
     money,
     categories,
     split,
