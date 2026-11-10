@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { TwoFactorCard } from "@/components/settings/TwoFactorCard";
 
 const THEME_OPTIONS = [
   { value: "light", label: "Light", icon: Sun },
@@ -161,6 +162,8 @@ export function SettingsClient() {
           </form>
         </CardContent>
       </Card>
+
+      <TwoFactorCard />
     </div>
   );
 }
