@@ -3,6 +3,7 @@ import { z } from "zod";
 import { env } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { toCents } from "@/lib/utils/currency";
+import { CATEGORY_IDS, categoryFromText } from "@/lib/finance/categories";
 import type { ExtractedReceipt } from "@/types/receipt";
 
 // claude-haiku-4-5-20251001 is the most cost-effective model for structured extraction
@@ -37,7 +38,8 @@ const USER_PROMPT = `Extract all data from this receipt image and return a JSON 
       "description": "string | null",
       "quantity": number,
       "unitPrice": number,
-      "totalPrice": number
+      "totalPrice": number,
+      "category": "${CATEGORY_IDS.join(" | ")} | null"
     }
   ],
   "subtotal": "number | null",
@@ -49,6 +51,7 @@ Rules:
 - cardLastFour: only include if paymentMethod is "card" and last 4 digits are visible on the receipt
 - lineItems: include every item on the receipt; if quantity is not shown, default to 1
 - description: any extra product detail printed on the receipt for that line item (brand, size/weight, variant, PLU/item code, promotional label); use null if no additional detail is visible
+- category: the spending category the item belongs to (food for home is groceries even at a gas station or big-box store; hot food eaten on the go is dining; fuel is transportation); use null if unsure
 - All monetary values: decimal numbers only, no currency symbols (e.g., 12.50 not "$12.50")
 - If this image is not a receipt, return exactly: {"error":"not_a_receipt"}`;
 
@@ -72,6 +75,7 @@ const ExtractedReceiptSchema = z.object({
       quantity: z.number().min(0),
       unitPrice: z.number(),
       totalPrice: z.number(),
+      category: z.string().nullable().optional(),
     }),
   ),
   subtotal: z.number().min(0).nullable(),
@@ -148,6 +152,7 @@ function convertToCents(extracted: ExtractedReceipt): ExtractedReceipt & {
     lineItems: extracted.lineItems.map((item) => ({
       ...item,
       description: item.description ?? undefined,
+      category: categoryFromText(item.category) ?? undefined,
       unitPrice: toCents(item.unitPrice),
       totalPrice: toCents(item.totalPrice),
     })),

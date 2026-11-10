@@ -26,3 +26,10 @@ export function parseCurrencyToCents(value: string): number | null {
   if (isNaN(parsed)) return null;
   return toCents(parsed);
 }
+
+/** Format integer cents as whole dollars for headline figures. E.g. 123456 → "$1,235" */
+export function formatWholeDollars(cents: number, locale = "en-US", currency = "USD"): string {
+  return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(
+    Math.round(cents / 100),
+  );
+}
