@@ -9,6 +9,7 @@ import {
   History,
   Settings,
   ShieldCheck,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/receipts", label: "Receipts", icon: Receipt },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/history", label: "History", icon: History },
+  { href: "/data", label: "Import & Export", icon: ArrowLeftRight },
   { href: "/admin", label: "Admin", icon: ShieldCheck },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
