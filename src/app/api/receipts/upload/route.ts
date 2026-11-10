@@ -206,6 +206,7 @@ export async function POST(req: NextRequest) {
         lineItems: (extractedData.lineItems ?? []).map((item) => ({
           ...item,
           description: item.description ?? undefined,
+          category: item.category ?? undefined,
         })),
         subtotal: extractedData.subtotal ?? undefined,
         taxAmount: extractedData.taxAmount ?? undefined,
@@ -287,6 +288,7 @@ export async function POST(req: NextRequest) {
       lineItems: (extractedData?.lineItems ?? []).map((item) => ({
         ...item,
         description: item.description ?? undefined,
+        category: item.category ?? undefined,
       })),
       subtotal: extractedData?.subtotal ?? undefined,
       taxAmount: extractedData?.taxAmount ?? undefined,

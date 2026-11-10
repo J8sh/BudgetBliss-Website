@@ -1,4 +1,4 @@
-import { toCents, fromCents, formatCurrency, parseCurrencyToCents } from "@/lib/utils/currency";
+import { toCents, fromCents, formatCurrency, parseCurrencyToCents, formatWholeDollars } from "@/lib/utils/currency";
 
 describe("toCents", () => {
   it("converts whole dollar amounts", () => {
@@ -61,5 +61,13 @@ describe("parseCurrencyToCents", () => {
   it("returns null for unparseable input", () => {
     expect(parseCurrencyToCents("abc")).toBeNull();
     expect(parseCurrencyToCents("")).toBeNull();
+  });
+});
+
+describe("formatWholeDollars", () => {
+  it("rounds to whole dollars", () => {
+    expect(formatWholeDollars(123456)).toBe("$1,235");
+    expect(formatWholeDollars(49)).toBe("$0");
+    expect(formatWholeDollars(-25060)).toBe("-$251");
   });
 });

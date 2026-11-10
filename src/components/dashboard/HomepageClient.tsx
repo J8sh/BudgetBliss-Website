@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Upload, ArrowRight } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,7 +13,12 @@ import { TopStoresListBlock } from "@/components/dashboard/TopStoresListBlock";
 import { RecentReceiptsBlock } from "@/components/dashboard/RecentReceiptsBlock";
 import { RecurringCostsBlock } from "@/components/dashboard/RecurringCostsBlock";
 import { IncomeSourcesBlock } from "@/components/dashboard/IncomeSourcesBlock";
-import { NetMonthlyBlock } from "@/components/dashboard/NetMonthlyBlock";
+import { LeftOverBlock } from "@/components/dashboard/LeftOverBlock";
+import { TakeawaysCard } from "@/components/insights/TakeawaysCard";
+import { MonthGlanceDialog } from "@/components/insights/MonthGlanceDialog";
+import { MoneyFlowDialog } from "@/components/insights/ExplainDialogs";
+import { useInsights } from "@/hooks/useInsights";
+import type { InsightAction } from "@/types/insights";
 import { useStats } from "@/hooks/useStats";
 import { useRecurring } from "@/hooks/useRecurring";
 import { useIncome } from "@/hooks/useIncome";
@@ -36,6 +43,16 @@ export function HomepageClient() {
   const { data, isLoading } = useStats();
   const { summary: recurringSummary, isLoading: recurringLoading } = useRecurring();
   const { summary: incomeSummary, isLoading: incomeLoading } = useIncome();
+  const { report, isLoading: insightsLoading } = useInsights();
+  const router = useRouter();
+  const [glanceOpen, setGlanceOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
+
+  // Takeaways on the dashboard hand off to the Insights page for anything deeper
+  function handleInsightAction(action: InsightAction) {
+    if (action.type === "review") router.push("/receipts");
+    else router.push("/insights");
+  }
 
   const summary = data?.summary;
   const dailySpend = data?.dailySpend ?? [];
@@ -65,7 +82,14 @@ export function HomepageClient() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatBlock title="Today" value={summary?.today ?? 0} isLoading={isLoading} />
         <StatBlock title="This Week" value={summary?.week ?? 0} isLoading={isLoading} />
-        <StatBlock title="This Month" value={summary?.month ?? 0} isLoading={isLoading} />
+        <StatBlock
+          title="This Month"
+          value={summary?.month ?? 0}
+          previousValue={report?.pace?.sameDayLastMonth}
+          trendLabel="than this point last month"
+          isLoading={isLoading}
+          onClick={() => setGlanceOpen(true)}
+        />
         <StatBlock title="This Year" value={summary?.year ?? 0} isLoading={isLoading} />
       </div>
 
@@ -73,12 +97,23 @@ export function HomepageClient() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatBlock title="Monthly Recurring" value={recurringSummary?.monthlyTotal ?? 0} isLoading={recurringLoading} />
         <StatBlock title="Monthly Income" value={incomeSummary?.monthlyTotal ?? 0} isLoading={incomeLoading} />
-        <NetMonthlyBlock
-          incomeMonthly={incomeSummary?.monthlyTotal ?? 0}
-          recurringMonthly={recurringSummary?.monthlyTotal ?? 0}
-          isLoading={incomeLoading || recurringLoading}
-        />
+        <LeftOverBlock money={report?.money} isLoading={insightsLoading} onClick={() => setFlowOpen(true)} />
       </div>
+
+      {/* Plain-language takeaways for this month */}
+      {report && report.insights.length > 0 && (
+        <TakeawaysCard
+          title="This month so far"
+          insights={report.insights}
+          limit={3}
+          onAction={handleInsightAction}
+          footer={
+            <Link href="/insights" className="mt-2 inline-flex items-center gap-1 text-sm font-medium text-foreground hover:underline">
+              See all insights <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          }
+        />
+      )}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -112,6 +147,9 @@ export function HomepageClient() {
       <div>
         <IncomeSourcesBlock />
       </div>
+
+      <MonthGlanceDialog report={report} open={glanceOpen} onOpenChange={setGlanceOpen} />
+      {report && <MoneyFlowDialog open={flowOpen} onOpenChange={setFlowOpen} report={report} />}
     </div>
   );
 }

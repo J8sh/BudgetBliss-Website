@@ -1,6 +1,6 @@
 "use client";
 
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,10 @@ interface StatBlockProps {
   isLoading?: boolean;
   /** CSS classes for the drag handle */
   dragHandleClassName?: string;
+  /** Wording after the trend percentage, e.g. "than this point last month" */
+  trendLabel?: string;
+  /** Makes the card open an explanation */
+  onClick?: () => void;
 }
 
 export function StatBlock({
@@ -22,6 +26,8 @@ export function StatBlock({
   previousValue,
   isLoading,
   dragHandleClassName,
+  trendLabel = "than last period",
+  onClick,
 }: StatBlockProps) {
   const trend =
     previousValue != null
@@ -31,9 +37,27 @@ export function StatBlock({
       : null;
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card
+      className={cn("h-full flex flex-col", onClick && "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+      {...(onClick
+        ? {
+            role: "button",
+            tabIndex: 0,
+            onClick,
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            },
+          }
+        : {})}
+    >
       <CardHeader className={cn("pb-2 shrink-0", dragHandleClassName)}>
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <CardTitle className="flex items-center justify-between text-sm font-medium text-muted-foreground">
+          {title}
+          {onClick && <ChevronRight className="h-4 w-4" aria-hidden />}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-center">
         {isLoading ? (
@@ -65,7 +89,7 @@ export function StatBlock({
                 <span>
                   {trend === 0
                     ? "No change"
-                    : `${Math.abs(trend).toFixed(1)}% ${trend > 0 ? "more" : "less"} than last period`}
+                    : `${Math.abs(trend).toFixed(0)}% ${trend > 0 ? "more" : "less"} ${trendLabel}`}
                 </span>
               </div>
             )}
