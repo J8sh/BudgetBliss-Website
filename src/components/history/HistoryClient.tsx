@@ -168,6 +168,7 @@ export function HistoryClient() {
                   <p className="font-medium text-sm truncate">{r.storeName}</p>
                   <p className="text-xs text-muted-foreground">
                     {new Date(r.receiptDate).toLocaleDateString("en-US", {
+                      timeZone: "UTC",
                       weekday: "short", year: "numeric", month: "short", day: "numeric",
                     })}
                   </p>

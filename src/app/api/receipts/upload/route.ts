@@ -14,6 +14,7 @@ import {
 import { extractReceiptData, NotAReceiptError, ClaudeApiError } from "@/lib/api/claude";
 import { logger } from "@/lib/logger";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { findImportedPurchase } from "@/lib/csv/bankMatch";
 import { startOfDay, endOfDay } from "@/lib/utils/dates";
 import mongoose from "mongoose";
 
@@ -179,6 +180,65 @@ export async function POST(req: NextRequest) {
       // Continue to save receipt with extractionMethod='failed'
     } else {
       logger.error({ error: err, imageHash: imageHash.slice(0, 8) }, "Claude extraction failed");
+    }
+  }
+
+  // Step 5b — Same purchase already imported from a bank statement? Attach the photo and its
+  // details to that receipt instead of creating a second one for the same purchase.
+  if (extractedData?.grandTotal != null && extractedData.receiptDate) {
+    const receiptDate = new Date(extractedData.receiptDate);
+    const match = isNaN(receiptDate.getTime())
+      ? undefined
+      : await findImportedPurchase(extractedData.grandTotal, receiptDate);
+
+    if (match) {
+      const photoFields = {
+        imageHash,
+        imagePath: filename,
+        imageUrl,
+        extractionMethod,
+        extractionRaw: rawResponseHolder.value || undefined,
+        storeName: extractedData.storeName ?? undefined,
+        storeAddress: extractedData.storeAddress ?? undefined,
+        receiptDate,
+        paymentMethod: extractedData.paymentMethod ?? undefined,
+        cardLastFour: extractedData.cardLastFour ?? undefined,
+        lineItems: (extractedData.lineItems ?? []).map((item) => ({
+          ...item,
+          description: item.description ?? undefined,
+        })),
+        subtotal: extractedData.subtotal ?? undefined,
+        taxAmount: extractedData.taxAmount ?? undefined,
+      };
+      // Fields the photo didn't provide keep the imported values
+      const set = Object.fromEntries(Object.entries(photoFields).filter(([, v]) => v !== undefined));
+      const merged = await Receipt.findOneAndUpdate(
+        { _id: match._id, imagePath: { $exists: false } },
+        { $set: set },
+        { returnDocument: "after", runValidators: true },
+      ).lean();
+
+      if (merged) {
+        logger.info(
+          { receiptId: merged._id.toString(), imageHash: imageHash.slice(0, 8) },
+          "Photo attached to a receipt imported from a bank statement",
+        );
+        return NextResponse.json(
+          {
+            receipt: {
+              _id: merged._id.toString(),
+              storeName: merged.storeName,
+              receiptDate: merged.receiptDate,
+              grandTotal: merged.grandTotal,
+              extractionMethod: merged.extractionMethod,
+              imageUrl: merged.imageUrl,
+              isDuplicate: merged.isDuplicate,
+              mergedWithImport: true,
+            },
+          },
+          { status: 200 },
+        );
+      }
     }
   }
 

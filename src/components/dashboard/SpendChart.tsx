@@ -32,7 +32,7 @@ function CustomTooltip({ active, payload, label }: { active?: boolean; payload?:
 
 export function SpendChart({ data, isLoading }: SpendChartProps) {
   const chartData = data.map((d) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
     total: fromCents(d.total),
     rawDate: d.date,
   }));

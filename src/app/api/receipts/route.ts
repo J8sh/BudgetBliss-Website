@@ -42,6 +42,16 @@ export async function GET(req: NextRequest) {
       filter["paymentMethod"] = query.paymentMethod;
     }
 
+    if (query.source === "photo") {
+      filter["imagePath"] = { $exists: true };
+    } else if (query.source === "bank") {
+      filter["imagePath"] = { $exists: false };
+      filter["tags"] = "bank-import";
+    } else if (query.source === "manual") {
+      filter["imagePath"] = { $exists: false };
+      filter["tags"] = { $ne: "bank-import" };
+    }
+
     if (query.isDuplicate !== undefined) {
       filter["isDuplicate"] = query.isDuplicate;
     }

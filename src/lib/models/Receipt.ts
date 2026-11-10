@@ -29,6 +29,8 @@ export interface ReceiptDoc extends Document {
   tags: string[];
   isDuplicate: boolean;
   duplicateOf?: mongoose.Types.ObjectId;
+  /** Fingerprint of the CSV row this receipt was imported from (see lib/csv/importer.ts) */
+  importKey?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -76,6 +78,7 @@ const receiptSchema = new Schema<ReceiptDoc>(
     tags: { type: [String], default: [] },
     isDuplicate: { type: Boolean, default: false, index: true },
     duplicateOf: { type: Schema.Types.ObjectId, ref: "Receipt" },
+    importKey: { type: String },
   },
   {
     timestamps: true,
@@ -91,6 +94,9 @@ receiptSchema.index({ createdAt: -1 });
 
 // Unique index on imageHash — only enforced when the field is present (sparse)
 receiptSchema.index({ imageHash: 1 }, { unique: true, sparse: true });
+
+// Each CSV row can only ever be imported once
+receiptSchema.index({ importKey: 1 }, { unique: true, sparse: true });
 
 export const Receipt: Model<ReceiptDoc> =
   mongoose.models["Receipt"] ?? mongoose.model<ReceiptDoc>("Receipt", receiptSchema);

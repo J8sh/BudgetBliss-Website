@@ -81,7 +81,7 @@ export function ReceiptTable({
             onBlur={() => handleSearch(searchInput)}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
             type="date"
             value={currentQuery["dateFrom"] ?? ""}
@@ -96,6 +96,17 @@ export function ReceiptTable({
             className="w-40"
             aria-label="To date"
           />
+          <select
+            value={currentQuery["source"] ?? ""}
+            onChange={(e) => onQueryChange({ ...currentQuery, source: e.target.value, page: "1" })}
+            className="h-8 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+            aria-label="Source"
+          >
+            <option value="">All sources</option>
+            <option value="photo">Photos</option>
+            <option value="bank">Bank imports</option>
+            <option value="manual">Typed in</option>
+          </select>
         </div>
       </div>
 
@@ -142,7 +153,7 @@ export function ReceiptTable({
                 <TableRow key={receipt._id} className="hover:bg-muted/30 transition-colors">
                   <TableCell className="font-medium">{receipt.storeName}</TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {new Date(receipt.receiptDate).toLocaleDateString()}
+                    {new Date(receipt.receiptDate).toLocaleDateString(undefined, { timeZone: "UTC" })}
                   </TableCell>
                   <TableCell className="text-sm capitalize text-muted-foreground">
                     {receipt.paymentMethod ?? "—"}
@@ -168,9 +179,12 @@ export function ReceiptTable({
                           Partial
                         </Badge>
                       )}
-                      {receipt.extractionMethod === "manual" && (
-                        <Badge variant="secondary" className="text-xs">Manual</Badge>
-                      )}
+                      {receipt.extractionMethod === "manual" &&
+                        (receipt.tags?.includes("bank-import") && !receipt.imageUrl ? (
+                          <Badge variant="secondary" className="text-xs">Bank</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Manual</Badge>
+                        ))}
                     </div>
                   </TableCell>
                   <TableCell>

@@ -16,7 +16,7 @@ import { Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 type UploadState =
   | { status: "idle" }
   | { status: "uploading" }
-  | { status: "success"; receiptId: string; isDuplicate?: boolean; duplicateOf?: string }
+  | { status: "success"; receiptId: string; isDuplicate?: boolean; duplicateOf?: string; mergedWithImport?: boolean }
   | { status: "failed"; imageUrl?: string; imageHash?: string; imagePath?: string; errorMessage: string }
   | { status: "not-a-receipt" };
 
@@ -69,6 +69,7 @@ export function UploadClient() {
         receiptId: receipt["_id"] as string,
         isDuplicate: receipt["isDuplicate"] as boolean | undefined,
         duplicateOf: receipt["duplicateOf"] as string | undefined,
+        mergedWithImport: receipt["mergedWithImport"] as boolean | undefined,
       });
     } catch {
       setUploadState({
@@ -121,6 +122,12 @@ export function UploadClient() {
             <Badge variant="outline" className="mt-2 text-yellow-600 border-yellow-400">
               Possible Duplicate
             </Badge>
+          )}
+          {uploadState.mergedWithImport && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              This purchase was already imported from your bank statement, so the photo and its items were
+              added to that receipt instead of creating a second one.
+            </p>
           )}
         </div>
         <div className="flex gap-3 justify-center">

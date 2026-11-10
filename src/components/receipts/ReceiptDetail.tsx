@@ -81,6 +81,7 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
           <h1 className="text-2xl font-bold text-foreground">{receipt.storeName}</h1>
           <p className="text-muted-foreground text-sm mt-1">
             {new Date(receipt.receiptDate).toLocaleDateString("en-US", {
+              timeZone: "UTC",
               weekday: "long",
               year: "numeric",
               month: "long",
@@ -182,7 +183,7 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Date</span>
-                <span>{new Date(receipt.receiptDate).toLocaleDateString()}</span>
+                <span>{new Date(receipt.receiptDate).toLocaleDateString(undefined, { timeZone: "UTC" })}</span>
               </div>
               {receipt.paymentMethod && (
                 <div className="flex justify-between">
