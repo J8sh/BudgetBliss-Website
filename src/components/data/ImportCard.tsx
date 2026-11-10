@@ -1,16 +1,18 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { FileUp } from "lucide-react";
+import { ArrowUpDown, CheckCircle2, FileUp } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { parseCsv } from "@/lib/csv/csv";
-import type { BankMapping, ImportKind, ImportResult, ImportRowStatus } from "@/types/dataTransfer";
+import { formatCurrency } from "@/lib/utils/currency";
+import type { BankMapping, ImportCounts, ImportKind, ImportResult, ImportRowResult, ImportRowStatus } from "@/types/dataTransfer";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
@@ -63,6 +65,30 @@ function saveMapping(headers: string[], mapping: BankMapping) {
   }
 }
 
+type SortKey = "line" | "date" | "amount";
+
+/** Where to look at what an import just added */
+const RESULT_LINKS: Record<ImportKind, { href: string; label: string }> = {
+  bank: { href: "/receipts?source=bank&sortBy=receiptDate&sortOrder=desc", label: "View imported receipts" },
+  receipts: { href: "/receipts?sortBy=receiptDate&sortOrder=desc", label: "View receipts" },
+  "line-items": { href: "/receipts?sortBy=receiptDate&sortOrder=desc", label: "View receipts" },
+  income: { href: "/dashboard", label: "View on dashboard" },
+  recurring: { href: "/dashboard", label: "View on dashboard" },
+};
+
+function sortRows(rows: ImportRowResult[], key: SortKey, dir: "asc" | "desc"): ImportRowResult[] {
+  const value = (r: ImportRowResult): string | number =>
+    key === "line" ? r.line : key === "date" ? (r.date ?? "") : (r.amountCents ?? Number.NEGATIVE_INFINITY);
+  const sign = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va < vb) return -sign;
+    if (va > vb) return sign;
+    return a.line - b.line;
+  });
+}
+
 export function ImportCard() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<{ name: string; text: string } | null>(null);
@@ -72,6 +98,19 @@ export function ImportCard() {
   const [preview, setPreview] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<ImportRowStatus | null>(null);
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "line", dir: "asc" });
+  const [lastImport, setLastImport] = useState<{ fileName: string; kind: ImportKind; written: number; counts: ImportCounts } | null>(null);
+
+  const visibleRows = useMemo(() => {
+    if (!preview) return [];
+    const filtered = statusFilter ? preview.rows.filter((r) => r.status === statusFilter) : preview.rows;
+    return sortRows(filtered, sort.key, sort.dir);
+  }, [preview, statusFilter, sort]);
+
+  function toggleSort(key: SortKey) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "line" ? "asc" : "desc" }));
+  }
 
   async function callImport(opts: {
     text: string;
@@ -139,6 +178,8 @@ export function ImportCard() {
     setForceBank(false);
     setMapping(saved);
     setPreview(null);
+    setLastImport(null);
+    setStatusFilter(null);
 
     const result = await callImport({ text, dryRun: true, forceBank: false, mapping: saved, skipDuplicates });
     if (result) {
@@ -175,6 +216,7 @@ export function ImportCard() {
 
     if (result.kind === "bank" && mapping) saveMapping(result.headers, mapping);
     toast.success(`Imported ${result.written} ${result.written === 1 ? "record" : "records"} from ${file.name}.`);
+    setLastImport({ fileName: file.name, kind: result.kind, written: result.written, counts: result.counts });
     reset();
   }
 
@@ -184,6 +226,7 @@ export function ImportCard() {
     setMapping(undefined);
     setForceBank(false);
     setError(null);
+    setStatusFilter(null);
   }
 
   const toWrite = preview ? preview.counts.create + preview.counts.update : 0;
@@ -219,6 +262,29 @@ export function ImportCard() {
         {error && (
           <div role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
+          </div>
+        )}
+
+        {lastImport && !file && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3">
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1 text-sm">
+              <div className="font-medium">
+                Imported {lastImport.written} {lastImport.written === 1 ? "record" : "records"} from {lastImport.fileName}
+              </div>
+              <div className="text-muted-foreground">
+                {[
+                  lastImport.counts.duplicate > 0 && `${lastImport.counts.duplicate} already here, not imported again`,
+                  lastImport.counts.skip > 0 && `${lastImport.counts.skip} skipped`,
+                  lastImport.counts.error > 0 && `${lastImport.counts.error} with errors`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Nothing was skipped."}
+              </div>
+            </div>
+            <Link href={RESULT_LINKS[lastImport.kind].href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              {RESULT_LINKS[lastImport.kind].label}
+            </Link>
           </div>
         )}
 
@@ -284,10 +350,24 @@ export function ImportCard() {
               {(Object.keys(STATUS_LABELS) as ImportRowStatus[])
                 .filter((s) => preview.counts[s] > 0)
                 .map((s) => (
-                  <Badge key={s} variant={STATUS_VARIANTS[s]}>
-                    {preview.counts[s]} {STATUS_LABELS[s].toLowerCase()}
-                  </Badge>
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatusFilter((f) => (f === s ? null : s))}
+                    aria-pressed={statusFilter === s}
+                    title={statusFilter === s ? "Show all rows" : `Show only "${STATUS_LABELS[s]}" rows`}
+                    className={cn("rounded-4xl", statusFilter === s && "ring-2 ring-ring")}
+                  >
+                    <Badge variant={STATUS_VARIANTS[s]}>
+                      {preview.counts[s]} {STATUS_LABELS[s].toLowerCase()}
+                    </Badge>
+                  </button>
                 ))}
+              {statusFilter && (
+                <Button variant="link" size="sm" className="px-0" onClick={() => setStatusFilter(null)}>
+                  Show all
+                </Button>
+              )}
               <label className="ml-auto flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -306,28 +386,41 @@ export function ImportCard() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-16">Line</TableHead>
+                    <SortableHead label="Line" sortKey="line" sort={sort} onSort={toggleSort} className="w-16" />
                     <TableHead className="w-28">Result</TableHead>
-                    <TableHead>Row</TableHead>
+                    <SortableHead label="Date" sortKey="date" sort={sort} onSort={toggleSort} className="w-28" />
+                    <TableHead>Description</TableHead>
+                    <SortableHead label="Amount" sortKey="amount" sort={sort} onSort={toggleSort} className="w-28 text-right" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.rows.map((row) => (
+                  {visibleRows.map((row) => (
                     <TableRow key={row.line}>
                       <TableCell className="tabular-nums text-muted-foreground">{row.line}</TableCell>
                       <TableCell>
                         <Badge variant={STATUS_VARIANTS[row.status]}>{STATUS_LABELS[row.status]}</Badge>
                       </TableCell>
+                      <TableCell className="tabular-nums text-sm">{row.date ?? "—"}</TableCell>
                       <TableCell className="whitespace-normal">
-                        <div className="text-sm">{row.summary || "—"}</div>
+                        <div className="text-sm">{row.description || row.summary || "—"}</div>
                         {row.message && (
                           <div className={cn("text-xs", row.status === "error" ? "text-destructive" : "text-muted-foreground")}>
                             {row.message}
                           </div>
                         )}
                       </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {row.amountCents !== undefined ? formatCurrency(row.amountCents) : "—"}
+                      </TableCell>
                     </TableRow>
                   ))}
+                  {visibleRows.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground">
+                        No rows match this filter.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -380,5 +473,33 @@ function ColumnSelect({
         ))}
       </select>
     </div>
+  );
+}
+
+function SortableHead({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; dir: "asc" | "desc" };
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const active = sort.key === sortKey;
+  return (
+    <TableHead className={className} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn("inline-flex items-center gap-1 font-medium", className?.includes("text-right") && "flex-row-reverse")}
+      >
+        {label}
+        <ArrowUpDown className={cn("h-3 w-3", active ? "text-primary" : "text-muted-foreground")} />
+      </button>
+    </TableHead>
   );
 }

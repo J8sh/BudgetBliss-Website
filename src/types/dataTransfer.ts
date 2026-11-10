@@ -29,6 +29,10 @@ export interface ImportRowResult {
   /** Short human description of the row, e.g. "2026-01-05 · Starbucks · $5.25" */
   summary: string;
   message?: string;
+  /** Structured parts of the row for the preview table, when known */
+  date?: string;
+  description?: string;
+  amountCents?: number;
 }
 
 export interface ImportCounts {

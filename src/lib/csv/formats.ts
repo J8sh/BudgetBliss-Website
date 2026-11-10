@@ -11,7 +11,7 @@ import type { ExtractionMethod, PaymentMethod } from "@/types/receipt";
 
 export const RECEIPT_HEADERS = [
   "id", "date", "store", "store_address", "payment_method", "card_last_four",
-  "subtotal", "tax", "total", "tags", "notes", "extraction_method", "is_duplicate", "created_at",
+  "subtotal", "tax", "total", "tags", "notes", "extraction_method", "is_duplicate", "created_at", "import_key",
 ] as const;
 
 export const LINE_ITEM_HEADERS = [
@@ -58,6 +58,7 @@ export interface ReceiptLike {
   extractionMethod?: string;
   isDuplicate?: boolean;
   createdAt?: Date;
+  importKey?: string;
   lineItems?: Array<{
     name: string;
     description?: string;
@@ -84,6 +85,7 @@ export function receiptToRow(r: ReceiptLike): string[] {
     r.extractionMethod ?? "",
     r.isDuplicate ? "true" : "false",
     r.createdAt ? r.createdAt.toISOString() : "",
+    r.importKey ?? "",
   ];
 }
 
@@ -166,6 +168,8 @@ export interface ReceiptImportRow {
   notes?: string;
   extractionMethod?: ExtractionMethod;
   isDuplicate?: boolean;
+  /** Fingerprint from an earlier CSV import, carried through export/restore */
+  importKey?: string;
 }
 
 export function parseReceiptRow(record: Record<string, string>): RowParse<ReceiptImportRow> {
@@ -203,6 +207,11 @@ export function parseReceiptRow(record: Record<string, string>): RowParse<Receip
   const isDuplicate = parseBoolean(cell(record, "is_duplicate"));
   if (isDuplicate === null) return { ok: false, error: "is_duplicate must be true or false" };
 
+  const importKey = cell(record, "import_key");
+  if (importKey && !/^(bank|receipt):[0-9a-f]{32}$/.test(importKey)) {
+    return { ok: false, error: "import_key isn't one BudgetBliss wrote; clear the cell" };
+  }
+
   return {
     ok: true,
     value: {
@@ -219,6 +228,7 @@ export function parseReceiptRow(record: Record<string, string>): RowParse<Receip
       notes: cell(record, "notes") || undefined,
       extractionMethod: (extraction || undefined) as ExtractionMethod | undefined,
       isDuplicate,
+      importKey: importKey || undefined,
     },
   };
 }

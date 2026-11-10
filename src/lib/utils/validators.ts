@@ -53,6 +53,8 @@ export const ReceiptListQuerySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   paymentMethod: z.enum(["card", "cash", "other"]).optional(),
+  /** photo = uploaded image, bank = imported from a statement, manual = typed in */
+  source: z.enum(["photo", "bank", "manual"]).optional(),
   isDuplicate: z
     .string()
     .transform((v) => v === "true")

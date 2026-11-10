@@ -16,6 +16,7 @@ import { Income } from "@/lib/models/Income";
 import { RecurringCost } from "@/lib/models/RecurringCost";
 import { GET as exportCsv } from "@/app/api/export/route";
 import { POST as importCsv } from "@/app/api/import/route";
+import { GET as listReceipts } from "@/app/api/receipts/route";
 import { parseCsv } from "@/lib/csv/csv";
 import type { ImportResult } from "@/types/dataTransfer";
 
@@ -24,6 +25,7 @@ let mongod: MongoMemoryServer;
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
+  await Receipt.syncIndexes(); // the unique importKey index is part of what's under test
 });
 
 afterEach(async () => {
@@ -237,9 +239,10 @@ describe("POST /api/import: BudgetBliss files", () => {
 
     const recurringCsv = "recurring_cost,amount,frequency,category\nGym,29.99,monthly,Health\nGym,29.99,monthly,Health\n";
     const first = await runImport({ csv: recurringCsv, dryRun: false });
-    expect(first.data).toMatchObject({ kind: "recurring", written: 2 });
+    // The second identical row in the same file is flagged, not imported
+    expect(first.data).toMatchObject({ kind: "recurring", written: 1, counts: { create: 1, duplicate: 1 } });
     const again = await runImport({ csv: recurringCsv });
-    expect(again.data.counts.duplicate).toBe(2);
+    expect(again.data.counts).toMatchObject({ create: 0, duplicate: 2 });
   });
 
   it("validates income categories and frequencies", async () => {
@@ -317,5 +320,129 @@ describe("POST /api/import: file problems", () => {
     const res = await runImport({ csv: big });
     expect(res.status).toBe(400);
     expect(res.data.error).toMatch(/limit is 5000/);
+  });
+});
+
+describe("no duplicates across files and existing data", () => {
+  const JAN = `Date,Description,Amount
+01/05/2026,STARBUCKS 1234,-5.25
+01/05/2026,STARBUCKS 1234,-5.25
+01/09/2026,SHELL OIL,-40.00
+`;
+  // An overlapping statement: same January rows (one with different spacing/case), plus February
+  const JAN_FEB = `Date,Description,Amount
+01/05/2026,Starbucks  1234,-5.25
+01/05/2026,STARBUCKS 1234,-5.25
+01/09/2026,SHELL OIL,-40.00
+02/02/2026,TRADER JOES,-61.30
+`;
+
+  it("keeps repeated identical charges on one statement (two coffees), once each", async () => {
+    const first = await runImport({ csv: JAN, dryRun: false });
+    expect(first.data.written).toBe(3);
+    expect(first.data.rows[1]!.message).toMatch(/Same as line 2/);
+  });
+
+  it("imports only the new rows from an overlapping statement", async () => {
+    await runImport({ csv: JAN, dryRun: false });
+    const { data } = await runImport({ csv: JAN_FEB, dryRun: false });
+    expect(data.counts).toMatchObject({ create: 1, duplicate: 3 });
+    expect(data.rows.slice(0, 3).every((r) => r.message?.startsWith("Already imported on"))).toBe(true);
+    expect(await Receipt.countDocuments()).toBe(4);
+  });
+
+  it("never re-imports an already-imported row, even with 'skip duplicates' off", async () => {
+    await runImport({ csv: JAN, dryRun: false });
+    const { data } = await runImport({ csv: JAN, dryRun: false, skipDuplicates: false });
+    expect(data.counts).toMatchObject({ create: 0, duplicate: 3 });
+    expect(await Receipt.countDocuments()).toBe(3);
+  });
+
+  it("imports a third identical charge that a later statement adds", async () => {
+    await runImport({ csv: JAN, dryRun: false });
+    const three = `Date,Description,Amount
+01/05/2026,STARBUCKS 1234,-5.25
+01/05/2026,STARBUCKS 1234,-5.25
+01/05/2026,STARBUCKS 1234,-5.25
+`;
+    const { data } = await runImport({ csv: three, dryRun: false });
+    expect(data.counts).toMatchObject({ duplicate: 2, create: 1 });
+    expect(await Receipt.countDocuments({ storeName: "STARBUCKS 1234" })).toBe(3);
+  });
+
+  it("two imports of the same file at once still write each row once", async () => {
+    const [a, b] = await Promise.all([runImport({ csv: JAN, dryRun: false }), runImport({ csv: JAN, dryRun: false })]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(await Receipt.countDocuments()).toBe(3);
+    expect(a.data.written + b.data.written).toBe(3);
+  });
+
+  it("matches statement rows against receipts entered other ways, each receipt once", async () => {
+    await Receipt.create({ storeName: "Shell", receiptDate: new Date("2026-01-08"), grandTotal: 4000, imagePath: "x.webp" });
+    const { data } = await runImport({ csv: JAN });
+    const shell = data.rows.find((r) => r.description === "SHELL OIL")!;
+    expect(shell).toMatchObject({ status: "duplicate", message: "Matches Shell on 2026-01-08" });
+  });
+
+  it("keeps import fingerprints through export and restore", async () => {
+    await runImport({ csv: JAN, dryRun: false });
+    const backup = (await exportText("type=receipts")).text;
+    expect(parseCsv(backup).headers).toContain("import_key");
+    await Receipt.deleteMany({});
+
+    const restored = await runImport({ csv: backup, dryRun: false });
+    expect(restored.data.written).toBe(3);
+    const again = await runImport({ csv: JAN });
+    expect(again.data.counts).toMatchObject({ create: 0, duplicate: 3 });
+    expect(again.data.rows.every((r) => r.message?.startsWith("Already imported on"))).toBe(true);
+  });
+
+  it("flags identical rows in a hand-made receipts file and never imports that file twice", async () => {
+    const csv = `date,store,total
+2026-03-01,Farmers Market,12.00
+2026-03-01,farmers market,12.00
+`;
+    const preview = await runImport({ csv });
+    expect(preview.data.counts).toMatchObject({ create: 1, duplicate: 1 });
+    expect(preview.data.rows[1]!.message).toBe("Same as line 2 in this file");
+
+    const forced = await runImport({ csv, dryRun: false, skipDuplicates: false });
+    expect(forced.data.written).toBe(2);
+    const again = await runImport({ csv, dryRun: false, skipDuplicates: false });
+    expect(again.data.counts).toMatchObject({ create: 0, duplicate: 2 });
+    expect(await Receipt.countDocuments()).toBe(2);
+  });
+
+  it("flags identical income rows within one file", async () => {
+    const csv = `income_source,amount,frequency
+Rent from Sam,500,monthly
+Rent from Sam,500,monthly
+`;
+    const { data } = await runImport({ csv });
+    expect(data.counts).toMatchObject({ create: 1, duplicate: 1 });
+  });
+
+  it("returns date, description and amount for sorting the preview", async () => {
+    const { data } = await runImport({ csv: JAN });
+    expect(data.rows[2]).toMatchObject({ date: "2026-01-09", description: "SHELL OIL", amountCents: 4000 });
+  });
+});
+
+describe("GET /api/receipts?source=", () => {
+  it("separates photos, bank imports and typed-in receipts", async () => {
+    await Receipt.create([
+      { storeName: "Photo", receiptDate: new Date("2026-01-01"), grandTotal: 100, imagePath: "a.webp" },
+      { storeName: "Typed", receiptDate: new Date("2026-01-01"), grandTotal: 200 },
+      { storeName: "Bank", receiptDate: new Date("2026-01-01"), grandTotal: 300, tags: ["bank-import"] },
+      { storeName: "Bank+photo", receiptDate: new Date("2026-01-01"), grandTotal: 400, tags: ["bank-import"], imagePath: "b.webp" },
+    ]);
+    const names = async (source: string) => {
+      const res = await listReceipts(new NextRequest(`http://localhost/api/receipts?source=${source}&sortBy=grandTotal&sortOrder=asc`));
+      return ((await res.json()) as { receipts: Array<{ storeName: string }> }).receipts.map((r) => r.storeName);
+    };
+    expect(await names("photo")).toEqual(["Photo", "Bank+photo"]);
+    expect(await names("bank")).toEqual(["Bank"]);
+    expect(await names("manual")).toEqual(["Typed"]);
   });
 });

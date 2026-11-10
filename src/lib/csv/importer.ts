@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import mongoose from "mongoose";
 import { parseCsv, rowToRecord } from "@/lib/csv/csv";
 import { formatCentsForCsv, toIsoDate } from "@/lib/csv/values";
@@ -11,6 +12,7 @@ import {
   type ReceiptImportRow,
 } from "@/lib/csv/formats";
 import { guessBankMapping, readBankRows, validateBankMapping } from "@/lib/csv/bankStatement";
+import { BANK_MATCH_WINDOW_DAYS } from "@/lib/csv/bankMatch";
 import { Receipt } from "@/lib/models/Receipt";
 import { Income } from "@/lib/models/Income";
 import { RecurringCost } from "@/lib/models/RecurringCost";
@@ -22,10 +24,22 @@ import type {
   ImportRowResult,
 } from "@/types/dataTransfer";
 
+/*
+ * How duplicates are kept out, from strongest to weakest:
+ *
+ * 1. Import keys. Every receipt created from a CSV row without an id stores a fingerprint of
+ *    that row (date, description/store, amount, and which repeat of an identical row it is).
+ *    A unique index on it means the same statement line can't be imported twice: not from
+ *    the same file, an overlapping statement, or two imports running at once. These are
+ *    always skipped.
+ * 2. Ids. Rows from BudgetBliss's own exports carry an id and update that record.
+ * 3. Look-alikes. A row matching an existing receipt (bank: same amount within 3 days; own
+ *    format: same store, date and total), or an identical earlier row in the same hand-made
+ *    file, is skipped by default. The user can import these anyway.
+ */
+
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
-/** A bank row counts as a receipt you already have if the amount matches within this many days */
-export const BANK_DUPLICATE_WINDOW_DAYS = 3;
 const MAX_RESULT_ROWS = 500;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -111,6 +125,72 @@ function pickResultRows(results: ImportRowResult[]): ImportRowResult[] {
 // Line numbers: header is line 1, so data row i is line i + 2
 const lineOf = (index: number) => index + 2;
 
+// ─── Duplicate helpers ───────────────────────────────────────────────────────
+
+/**
+ * Fingerprint for a CSV row. `occurrence` separates genuinely repeated rows (two identical
+ * coffees on one statement) so each still imports once, and only once.
+ */
+function importKey(kind: "bank" | "receipt", parts: Array<string | number>, occurrence: number): string {
+  const hash = createHash("sha256").update([...parts, occurrence].join("\u001f")).digest("hex").slice(0, 32);
+  return `${kind}:${hash}`;
+}
+
+/** For each item, how many earlier items share its identity (0 for the first), and where the first one was */
+function countRepeats<T>(items: Array<T | null>, identity: (item: T) => string): Array<{ occurrence: number; firstIndex: number }> {
+  const seen = new Map<string, { count: number; firstIndex: number }>();
+  return items.map((item, i) => {
+    if (item === null) return { occurrence: 0, firstIndex: i };
+    const id = identity(item);
+    const prior = seen.get(id);
+    if (prior) {
+      prior.count++;
+      return { occurrence: prior.count, firstIndex: prior.firstIndex };
+    }
+    seen.set(id, { count: 0, firstIndex: i });
+    return { occurrence: 0, firstIndex: i };
+  });
+}
+
+/** Existing receipts already holding any of these import keys, by key */
+async function receiptsByImportKey(keys: string[]) {
+  if (keys.length === 0) return new Map<string, { _id: mongoose.Types.ObjectId; createdAt: Date }>();
+  const found = await Receipt.find({ importKey: { $in: keys } }).select("_id importKey createdAt").lean();
+  return new Map(found.map((r) => [r.importKey!, { _id: r._id, createdAt: r.createdAt }]));
+}
+
+/**
+ * Inserts documents, quietly skipping any that hit a unique index (an import key or id that
+ * another import wrote in the meantime). Returns how many were inserted.
+ */
+async function insertSkippingDuplicates(model: mongoose.Model<never>, docs: Record<string, unknown>[]): Promise<number> {
+  if (docs.length === 0) return 0;
+  try {
+    const res = await model.bulkWrite(
+      docs.map((document) => ({ insertOne: { document } })) as Parameters<typeof model.bulkWrite>[0],
+      { ordered: false },
+    );
+    return res.insertedCount;
+  } catch (err) {
+    const e = err as { code?: number; writeErrors?: unknown; insertedCount?: number; result?: { insertedCount?: number } };
+    const writeErrors = Array.isArray(e.writeErrors) ? e.writeErrors : e.writeErrors ? [e.writeErrors] : [];
+    const onlyDuplicates =
+      writeErrors.length > 0 ? writeErrors.every((w) => (w as { code?: number }).code === 11000) : e.code === 11000;
+    if (!onlyDuplicates) throw err;
+    return e.insertedCount ?? e.result?.insertedCount ?? 0;
+  }
+}
+
+async function loadReceiptsBetween(isoDates: string[], paddingDays: number) {
+  if (isoDates.length === 0) return [];
+  const sorted = [...isoDates].sort();
+  const from = new Date(new Date(sorted[0]!).getTime() - paddingDays * DAY_MS);
+  const to = new Date(new Date(sorted[sorted.length - 1]!).getTime() + (paddingDays + 1) * DAY_MS);
+  return Receipt.find({ receiptDate: { $gte: from, $lt: to } })
+    .select("_id storeName receiptDate grandTotal importKey")
+    .lean();
+}
+
 // ─── Receipts (BudgetBliss format) ───────────────────────────────────────────
 
 async function planReceipts(records: Record<string, string>[], skipDuplicates: boolean): Promise<Plan> {
@@ -120,12 +200,20 @@ async function planReceipts(records: Record<string, string>[], skipDuplicates: b
     (await Receipt.find({ _id: { $in: ids.map(objectId) } }).select("_id").lean()).map((r) => r._id.toString()),
   );
 
-  // Receipts on the same days, for spotting rows without an id that are already here
-  const newRowDates = parsed.flatMap((p) => (p.ok && !p.value.id ? [p.value.receiptDate] : []));
-  const sameDay = await loadReceiptsBetween(newRowDates, 0);
+  // Rows without an id are identified by date, store and total
+  const noIdRows = parsed.map((p) => (p.ok && !p.value.id ? p.value : null));
+  const identity = (r: ReceiptImportRow) => [r.receiptDate, r.storeName.toLowerCase(), r.grandTotal].join("|");
+  const repeats = countRepeats(noIdRows, identity);
+  const keys = noIdRows.map((r, i) =>
+    r ? importKey("receipt", [r.receiptDate, r.storeName.toLowerCase(), r.grandTotal], repeats[i]!.occurrence) : null,
+  );
+  const restoredKeys = parsed.flatMap((p) => (p.ok && p.value.id && p.value.importKey ? [p.value.importKey] : []));
+  const imported = await receiptsByImportKey([...keys.filter((k): k is string => k !== null), ...restoredKeys]);
+  const sameDay = await loadReceiptsBetween(noIdRows.flatMap((r) => (r ? [r.receiptDate] : [])), 0);
+  const claimed = new Set<string>([...imported.values()].map((r) => r._id.toString()));
 
   const results: ImportRowResult[] = [];
-  const inserts: ReceiptImportRow[] = [];
+  const inserts: Array<{ row: ReceiptImportRow; key?: string }> = [];
   const updates: ReceiptImportRow[] = [];
   const seenIds = new Set<string>();
 
@@ -136,78 +224,102 @@ async function planReceipts(records: Record<string, string>[], skipDuplicates: b
       return;
     }
     const r = p.value;
-    const summary = `${r.receiptDate} · ${r.storeName} · ${money(r.grandTotal)}`;
+    const base = {
+      line,
+      summary: `${r.receiptDate} · ${r.storeName} · ${money(r.grandTotal)}`,
+      date: r.receiptDate,
+      description: r.storeName,
+      amountCents: r.grandTotal,
+    };
 
-    if (r.id && seenIds.has(r.id)) {
-      results.push({ line, status: "error", summary, message: "This id appears more than once in the file" });
-      return;
-    }
-    if (r.id) seenIds.add(r.id);
-
-    if (r.id && existingIds.has(r.id)) {
-      updates.push(r);
-      results.push({ line, status: "update", summary });
-      return;
-    }
-
-    if (!r.id) {
-      const match = sameDay.find(
-        (e) =>
-          toIsoDate(e.receiptDate) === r.receiptDate &&
-          e.grandTotal === r.grandTotal &&
-          e.storeName.toLowerCase() === r.storeName.toLowerCase(),
-      );
-      if (match) {
-        if (skipDuplicates) {
-          results.push({ line, status: "duplicate", summary, message: "Same store, date and total as an existing receipt" });
-          return;
-        }
-        inserts.push(r);
-        results.push({ line, status: "create", summary, message: "Possible duplicate, importing anyway" });
+    if (r.id) {
+      if (seenIds.has(r.id)) {
+        results.push({ ...base, status: "error", message: "This id appears more than once in the file" });
         return;
       }
+      seenIds.add(r.id);
+      if (existingIds.has(r.id)) {
+        updates.push(r);
+        results.push({ ...base, status: "update" });
+        return;
+      }
+      const sameRow = r.importKey ? imported.get(r.importKey) : undefined;
+      if (sameRow) {
+        results.push({ ...base, status: "duplicate", message: `Already imported on ${toIsoDate(sameRow.createdAt)}` });
+        return;
+      }
+      inserts.push({ row: r, key: r.importKey });
+      results.push({ ...base, status: "create", message: "Restored with its original id" });
+      return;
     }
 
-    inserts.push(r);
-    results.push({ line, status: "create", summary, message: r.id ? "Restored with its original id" : undefined });
+    const key = keys[i]!;
+    const already = imported.get(key);
+    if (already) {
+      results.push({ ...base, status: "duplicate", message: `Already imported on ${toIsoDate(already.createdAt)}` });
+      return;
+    }
+
+    const repeat = repeats[i]!;
+    const lookAlike = sameDay.find(
+      (e) =>
+        !claimed.has(e._id.toString()) &&
+        toIsoDate(e.receiptDate) === r.receiptDate &&
+        e.grandTotal === r.grandTotal &&
+        e.storeName.toLowerCase() === r.storeName.toLowerCase(),
+    );
+    const reason = lookAlike
+      ? "Same store, date and total as an existing receipt"
+      : repeat.occurrence > 0
+        ? `Same as line ${lineOf(repeat.firstIndex)} in this file`
+        : null;
+    if (lookAlike) claimed.add(lookAlike._id.toString());
+
+    if (reason && skipDuplicates) {
+      results.push({ ...base, status: "duplicate", message: reason });
+      return;
+    }
+    inserts.push({ row: r, key });
+    results.push({ ...base, status: "create", message: reason ? `${reason}, importing anyway` : undefined });
   });
 
   return {
     results,
     write: async () => {
-      const ops = [
-        ...inserts.map((r) => ({
-          insertOne: {
-            document: {
-              ...(r.id ? { _id: objectId(r.id) } : {}),
-              ...receiptFields(r),
-              extractionMethod: r.extractionMethod ?? "manual",
-              isDuplicate: r.isDuplicate ?? false,
-            },
-          },
+      const inserted = await insertSkippingDuplicates(
+        Receipt as unknown as mongoose.Model<never>,
+        inserts.map(({ row, key }) => ({
+          ...(row.id ? { _id: objectId(row.id) } : {}),
+          ...receiptFields(row),
+          extractionMethod: row.extractionMethod ?? "manual",
+          isDuplicate: row.isDuplicate ?? false,
+          ...(key ? { importKey: key } : {}),
         })),
-        ...updates.map((r) => {
-          const fields = receiptFields(r);
-          const set: Record<string, unknown> = {};
-          const unset: Record<string, ""> = {};
-          for (const [key, value] of Object.entries(fields)) {
-            if (value === undefined) unset[key] = "";
-            else set[key] = value;
-          }
-          if (r.extractionMethod) set["extractionMethod"] = r.extractionMethod;
-          if (r.isDuplicate !== undefined) set["isDuplicate"] = r.isDuplicate;
-          return {
-            updateOne: {
-              filter: { _id: objectId(r.id!) },
-              update: Object.keys(unset).length ? { $set: set, $unset: unset } : { $set: set },
-            },
-          };
-        }),
-      ];
-      if (ops.length === 0) return 0;
-      const res = await Receipt.bulkWrite(ops, { ordered: false });
+      );
+
+      if (updates.length > 0) {
+        await Receipt.bulkWrite(
+          updates.map((r) => {
+            const set: Record<string, unknown> = {};
+            const unset: Record<string, ""> = {};
+            for (const [field, value] of Object.entries(receiptFields(r))) {
+              if (value === undefined) unset[field] = "";
+              else set[field] = value;
+            }
+            if (r.extractionMethod) set["extractionMethod"] = r.extractionMethod;
+            if (r.isDuplicate !== undefined) set["isDuplicate"] = r.isDuplicate;
+            return {
+              updateOne: {
+                filter: { _id: objectId(r.id!) },
+                update: Object.keys(unset).length ? { $set: set, $unset: unset } : { $set: set },
+              },
+            };
+          }),
+          { ordered: false },
+        );
+      }
       // Updates count even when the row matched what was already stored
-      return res.insertedCount + updates.length;
+      return inserted + updates.length;
     },
   };
 }
@@ -228,16 +340,6 @@ function receiptFields(r: ReceiptImportRow) {
   };
 }
 
-async function loadReceiptsBetween(isoDates: string[], paddingDays: number) {
-  if (isoDates.length === 0) return [];
-  const sorted = [...isoDates].sort();
-  const from = new Date(new Date(sorted[0]!).getTime() - paddingDays * DAY_MS);
-  const to = new Date(new Date(sorted[sorted.length - 1]!).getTime() + (paddingDays + 1) * DAY_MS);
-  return Receipt.find({ receiptDate: { $gte: from, $lt: to } })
-    .select("_id storeName receiptDate grandTotal")
-    .lean();
-}
-
 // ─── Line items (BudgetBliss format) ─────────────────────────────────────────
 
 async function planLineItems(records: Record<string, string>[]): Promise<Plan> {
@@ -249,7 +351,8 @@ async function planLineItems(records: Record<string, string>[]): Promise<Plan> {
     ),
   );
 
-  // A receipt's items are replaced as a set, so one bad row holds back its whole receipt
+  // A receipt's items are replaced as a set (so importing twice can't double them), and one
+  // bad row holds back its whole receipt
   const badReceipts = new Set<string>();
   parsed.forEach((p, i) => {
     if (!p.ok) {
@@ -266,19 +369,21 @@ async function planLineItems(records: Record<string, string>[]): Promise<Plan> {
 
     const item = p.value;
     const receipt = existing.get(item.receiptId);
+    const date = receipt ? toIsoDate(receipt.receiptDate) : undefined;
     const summary = receipt
-      ? `${toIsoDate(receipt.receiptDate)} · ${receipt.storeName} · ${item.name} · ${money(item.totalPrice)}`
+      ? `${date} · ${receipt.storeName} · ${item.name} · ${money(item.totalPrice)}`
       : `${item.name} · ${money(item.totalPrice)}`;
+    const base = { line, summary, date, description: receipt ? `${receipt.storeName}: ${item.name}` : item.name, amountCents: item.totalPrice };
 
     if (!receipt) {
-      return { line, status: "error", summary, message: "No receipt with this receipt_id. Import the receipts file first." };
+      return { ...base, status: "error", message: "No receipt with this receipt_id. Import the receipts file first." };
     }
     if (badReceipts.has(item.receiptId)) {
-      return { line, status: "skip", summary, message: "Another row for this receipt has an error" };
+      return { ...base, status: "skip", message: "Another row for this receipt has an error" };
     }
     groups.set(item.receiptId, [...(groups.get(item.receiptId) ?? []), item]);
     if (!firstResultForReceipt.has(item.receiptId)) firstResultForReceipt.set(item.receiptId, i);
-    return { line, status: "update", summary };
+    return { ...base, status: "update" };
   });
 
   for (const [id, index] of firstResultForReceipt) {
@@ -293,11 +398,7 @@ async function planLineItems(records: Record<string, string>[]): Promise<Plan> {
         [...groups].map(([id, items]) => ({
           updateOne: {
             filter: { _id: objectId(id) },
-            update: {
-              $set: {
-                lineItems: items.map(({ receiptId: _r, ...item }) => item),
-              },
-            },
+            update: { $set: { lineItems: items.map(({ receiptId: _r, ...item }) => item) } },
           },
         })),
         { ordered: false },
@@ -323,6 +424,12 @@ async function planBudgetEntries(
   const all = await model.find({}).select("_id name amount frequency").lean();
   const existingIds = new Set(all.map((e) => e._id.toString()));
 
+  const identity = (e: BudgetEntryImportRow) => [e.name.toLowerCase(), e.amount, e.frequency].join("|");
+  const repeats = countRepeats(
+    parsed.map((p) => (p.ok && !p.value.id ? p.value : null)),
+    identity,
+  );
+
   const results: ImportRowResult[] = [];
   const inserts: BudgetEntryImportRow[] = [];
   const updates: BudgetEntryImportRow[] = [];
@@ -335,32 +442,38 @@ async function planBudgetEntries(
       return;
     }
     const e = p.value;
-    const summary = `${e.name} · ${money(e.amount)} ${e.frequency}`;
+    const base = { line, summary: `${e.name} · ${money(e.amount)} ${e.frequency}`, description: `${e.name} (${e.frequency})`, amountCents: e.amount };
 
-    if (e.id && seenIds.has(e.id)) {
-      results.push({ line, status: "error", summary, message: "This id appears more than once in the file" });
-      return;
-    }
-    if (e.id) seenIds.add(e.id);
-
-    if (e.id && existingIds.has(e.id)) {
-      updates.push(e);
-      results.push({ line, status: "update", summary });
-      return;
-    }
-
-    if (!e.id) {
-      const match = all.find(
-        (x) => x.name.toLowerCase() === e.name.toLowerCase() && x.amount === e.amount && x.frequency === e.frequency,
-      );
-      if (match && skipDuplicates) {
-        results.push({ line, status: "duplicate", summary, message: "Same name, amount and frequency already exists" });
+    if (e.id) {
+      if (seenIds.has(e.id)) {
+        results.push({ ...base, status: "error", message: "This id appears more than once in the file" });
         return;
       }
+      seenIds.add(e.id);
+      if (existingIds.has(e.id)) {
+        updates.push(e);
+        results.push({ ...base, status: "update" });
+      } else {
+        inserts.push(e);
+        results.push({ ...base, status: "create", message: "Restored with its original id" });
+      }
+      return;
     }
 
+    const exists = all.some((x) => [x.name.toLowerCase(), x.amount, x.frequency].join("|") === identity(e));
+    const repeat = repeats[i]!;
+    const reason = exists
+      ? "Same name, amount and frequency already exists"
+      : repeat.occurrence > 0
+        ? `Same as line ${lineOf(repeat.firstIndex)} in this file`
+        : null;
+
+    if (reason && skipDuplicates) {
+      results.push({ ...base, status: "duplicate", message: reason });
+      return;
+    }
     inserts.push(e);
-    results.push({ line, status: "create", summary });
+    results.push({ ...base, status: "create", message: reason ? `${reason}, importing anyway` : undefined });
   });
 
   return {
@@ -374,28 +487,30 @@ async function planBudgetEntries(
         notes: e.notes,
         isActive: e.isActive,
       });
-      const ops = [
-        ...inserts.map((e) => ({
-          insertOne: { document: { ...(e.id ? { _id: objectId(e.id) } : {}), ...fields(e) } },
-        })),
-        ...updates.map((e) => {
-          const set: Record<string, unknown> = {};
-          const unset: Record<string, ""> = {};
-          for (const [key, value] of Object.entries(fields(e))) {
-            if (value === undefined) unset[key] = "";
-            else set[key] = value;
-          }
-          return {
-            updateOne: {
-              filter: { _id: objectId(e.id!) },
-              update: Object.keys(unset).length ? { $set: set, $unset: unset } : { $set: set },
-            },
-          };
-        }),
-      ];
-      if (ops.length === 0) return 0;
-      await model.bulkWrite(ops as Parameters<typeof model.bulkWrite>[0], { ordered: false });
-      return ops.length;
+      const inserted = await insertSkippingDuplicates(
+        model as unknown as mongoose.Model<never>,
+        inserts.map((e) => ({ ...(e.id ? { _id: objectId(e.id) } : {}), ...fields(e) })),
+      );
+      if (updates.length > 0) {
+        await model.bulkWrite(
+          updates.map((e) => {
+            const set: Record<string, unknown> = {};
+            const unset: Record<string, ""> = {};
+            for (const [key, value] of Object.entries(fields(e))) {
+              if (value === undefined) unset[key] = "";
+              else set[key] = value;
+            }
+            return {
+              updateOne: {
+                filter: { _id: objectId(e.id!) },
+                update: Object.keys(unset).length ? { $set: set, $unset: unset } : { $set: set },
+              },
+            };
+          }) as Parameters<typeof model.bulkWrite>[0],
+          { ordered: false },
+        );
+      }
+      return inserted + updates.length;
     },
   };
 }
@@ -420,47 +535,73 @@ async function planBank(
   }
 
   const bankRows = readBankRows(headers, rows, mapping);
-  const existing = await loadReceiptsBetween(
-    bankRows.flatMap((r) => (r.ok ? [r.date] : [])),
-    BANK_DUPLICATE_WINDOW_DAYS,
+  const purchases = bankRows.map((r) => (r.ok ? r : null));
+  const identity = (r: { date: string; description: string; spendingCents: number }) =>
+    [r.date, r.description.toUpperCase(), r.spendingCents].join("|");
+  const repeats = countRepeats(purchases, identity);
+  const keys = purchases.map((r, i) =>
+    r ? importKey("bank", [r.date, r.description.toUpperCase(), r.spendingCents], repeats[i]!.occurrence) : null,
   );
-  const claimed = new Set<string>(); // each existing receipt can only match one statement row
 
-  const inserts: Array<{ date: string; description: string; spendingCents: number }> = [];
+  const imported = await receiptsByImportKey(keys.filter((k): k is string => k !== null));
+  const nearby = await loadReceiptsBetween(
+    purchases.flatMap((r) => (r ? [r.date] : [])),
+    BANK_MATCH_WINDOW_DAYS,
+  );
+  // Each existing receipt can stand in for only one statement row; exact matches claim theirs first
+  const claimed = new Set<string>([...imported.values()].map((r) => r._id.toString()));
+
+  const inserts: Array<{ date: string; description: string; spendingCents: number; key: string }> = [];
   const results = bankRows.map((r, i): ImportRowResult => {
     const line = lineOf(i);
     if (!r.ok) {
       const summary = [r.date, r.description].filter(Boolean).join(" · ");
-      return { line, status: r.reason, summary, message: r.message };
+      return { line, status: r.reason, summary, message: r.message, date: r.date, description: r.description };
     }
 
-    const summary = `${r.date} · ${r.description} · ${money(r.spendingCents)}`;
+    const base = {
+      line,
+      summary: `${r.date} · ${r.description} · ${money(r.spendingCents)}`,
+      date: r.date,
+      description: r.description,
+      amountCents: r.spendingCents,
+    };
+    const key = keys[i]!;
+    const already = imported.get(key);
+    if (already) {
+      return { ...base, status: "duplicate", message: `Already imported on ${toIsoDate(already.createdAt)}` };
+    }
+
     const rowTime = new Date(r.date).getTime();
-    const match = existing.find(
+    const match = nearby.find(
       (e) =>
         !claimed.has(e._id.toString()) &&
         e.grandTotal === r.spendingCents &&
-        Math.abs(e.receiptDate.getTime() - rowTime) <= BANK_DUPLICATE_WINDOW_DAYS * DAY_MS,
+        Math.abs(e.receiptDate.getTime() - rowTime) <= BANK_MATCH_WINDOW_DAYS * DAY_MS,
     );
 
     if (match) {
       claimed.add(match._id.toString());
       const message = `Matches ${match.storeName} on ${toIsoDate(match.receiptDate)}`;
-      if (skipDuplicates) return { line, status: "duplicate", summary, message };
-      inserts.push(r);
-      return { line, status: "create", summary, message: `${message}, importing anyway` };
+      if (skipDuplicates) return { ...base, status: "duplicate", message };
+      inserts.push({ ...r, key });
+      return { ...base, status: "create", message: `${message}, importing anyway` };
     }
 
-    inserts.push(r);
-    return { line, status: "create", summary };
+    inserts.push({ ...r, key });
+    return {
+      ...base,
+      status: "create",
+      message: repeats[i]!.occurrence > 0 ? `Same as line ${lineOf(repeats[i]!.firstIndex)}; statements list each charge once, so both are kept` : undefined,
+    };
   });
 
   return {
     mapping,
     results,
-    write: async () => {
-      if (inserts.length === 0) return 0;
-      const docs = await Receipt.insertMany(
+    write: () =>
+      insertSkippingDuplicates(
+        Receipt as unknown as mongoose.Model<never>,
         inserts.map((r) => ({
           storeName: r.description,
           receiptDate: new Date(r.date),
@@ -468,10 +609,8 @@ async function planBank(
           extractionMethod: "manual",
           tags: ["bank-import"],
           lineItems: [],
+          importKey: r.key,
         })),
-        { ordered: false },
-      );
-      return docs.length;
-    },
+      ),
   };
 }

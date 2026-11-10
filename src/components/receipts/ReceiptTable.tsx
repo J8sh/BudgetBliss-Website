@@ -81,7 +81,7 @@ export function ReceiptTable({
             onBlur={() => handleSearch(searchInput)}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Input
             type="date"
             value={currentQuery["dateFrom"] ?? ""}
@@ -96,6 +96,17 @@ export function ReceiptTable({
             className="w-40"
             aria-label="To date"
           />
+          <select
+            value={currentQuery["source"] ?? ""}
+            onChange={(e) => onQueryChange({ ...currentQuery, source: e.target.value, page: "1" })}
+            className="h-8 rounded-lg border border-input bg-background px-2 text-sm text-foreground"
+            aria-label="Source"
+          >
+            <option value="">All sources</option>
+            <option value="photo">Photos</option>
+            <option value="bank">Bank imports</option>
+            <option value="manual">Typed in</option>
+          </select>
         </div>
       </div>
 
@@ -168,9 +179,12 @@ export function ReceiptTable({
                           Partial
                         </Badge>
                       )}
-                      {receipt.extractionMethod === "manual" && (
-                        <Badge variant="secondary" className="text-xs">Manual</Badge>
-                      )}
+                      {receipt.extractionMethod === "manual" &&
+                        (receipt.tags?.includes("bank-import") && !receipt.imageUrl ? (
+                          <Badge variant="secondary" className="text-xs">Bank</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">Manual</Badge>
+                        ))}
                     </div>
                   </TableCell>
                   <TableCell>
