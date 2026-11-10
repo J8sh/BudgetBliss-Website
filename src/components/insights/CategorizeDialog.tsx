@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { formatWholeDollars } from "@/lib/utils/currency";
-import { CATEGORIES, CATEGORY_IDS, categoryLabel, type CategoryId } from "@/lib/finance/categories";
+import { CATEGORIES, CATEGORY_IDS, EXCLUSIONS, EXCLUSION_KINDS, storeChoiceLabel, type StoreChoice } from "@/lib/finance/categories";
 import { useMerchants } from "@/hooks/useInsights";
 import type { CategorySource, MerchantSummary } from "@/types/insights";
 
@@ -77,7 +77,7 @@ export function CategorizeDialog({ open, onOpenChange, onChanged }: CategorizeDi
       toast.success(
         value === ""
           ? `${m.name} is back to its suggested category.`
-          : `${m.name} → ${CATEGORIES[value as CategoryId].label}, for all ${m.visits} ${m.visits === 1 ? "receipt" : "receipts"}.`,
+          : `${m.name} → ${storeChoiceLabel(value as StoreChoice)}, for all ${m.visits} ${m.visits === 1 ? "receipt" : "receipts"}.`,
       );
       refetch();
       onChanged();
@@ -122,7 +122,9 @@ export function CategorizeDialog({ open, onOpenChange, onChanged }: CategorizeDi
         <DialogHeader>
           <DialogTitle>Sort stores into categories</DialogTitle>
           <DialogDescription>
-            Pick a category once and it applies to every receipt from that store, including future ones.
+            Pick a category once and it applies to every receipt from that store, including future ones. Card payments
+            and transfers to savings are left out automatically; mark rent or utility payments you already list as
+            recurring bills as &quot;Recurring bill&quot; so they aren&apos;t counted twice.
           </DialogDescription>
         </DialogHeader>
 
@@ -203,17 +205,26 @@ export function CategorizeDialog({ open, onOpenChange, onChanged }: CategorizeDi
                     <option value="">
                       {m.source === "yours"
                         ? m.suggested
-                          ? `Use suggestion (${CATEGORIES[m.suggested].label})`
+                          ? `Use suggestion (${storeChoiceLabel(m.suggested)})`
                           : "Clear my choice"
                         : m.category === "uncategorized"
                           ? "Choose a category…"
-                          : `${categoryLabel(m.category)}${m.source === "items" ? " (by item)" : " (suggested)"}`}
+                          : `${storeChoiceLabel(m.category)}${m.source === "items" ? " (by item)" : " (suggested)"}`}
                     </option>
-                    {CATEGORY_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {CATEGORIES[id].label}
-                      </option>
-                    ))}
+                    <optgroup label="Spending">
+                      {CATEGORY_IDS.map((id) => (
+                        <option key={id} value={id}>
+                          {CATEGORIES[id].label}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Not counted as spending">
+                      {EXCLUSION_KINDS.map((kind) => (
+                        <option key={kind} value={kind} title={EXCLUSIONS[kind].description}>
+                          {EXCLUSIONS[kind].label}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </li>
               ))}

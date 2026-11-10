@@ -38,7 +38,7 @@ beforeEach(async () => {
   await Receipt.create([
     { storeName: "ALDI", receiptDate: new Date("2026-09-02"), grandTotal: 25000 },
     { storeName: "Starbucks Coffee", receiptDate: new Date("2026-09-05"), grandTotal: 600 },
-    { storeName: "Overland Park", receiptDate: new Date("2026-09-20"), grandTotal: 3000 },
+    { storeName: "Riverside Plaza", receiptDate: new Date("2026-09-20"), grandTotal: 3000 },
     { storeName: "Shawnee", receiptDate: new Date("2026-09-21"), grandTotal: 1000, extractionMethod: "failed" },
     {
       storeName: "Walmart Supercenter",
@@ -118,17 +118,41 @@ describe("store categories", () => {
   it("lists stores with how they're categorized, biggest first", async () => {
     const list = await merchants();
     expect(list[0]).toMatchObject({ key: "aldi", name: "ALDI", category: "groceries", source: "store", visits: 2, total: 45000 });
-    expect(list.find((m) => m.key === "overland park")).toMatchObject({ category: "uncategorized", source: "none" });
+    expect(list.find((m) => m.key === "riverside plaza")).toMatchObject({ category: "uncategorized", source: "none" });
     expect(list.find((m) => m.key === "walmart")).toMatchObject({ name: "Walmart", mixed: true, source: "store" });
   });
 
   it("applies your choice to every receipt from the store, and can undo it", async () => {
-    expect((await put({ key: "overland park", category: "gifts" })).status).toBe(200);
-    expect((await merchants()).find((m) => m.key === "overland park")).toMatchObject({ category: "gifts", source: "yours" });
+    expect((await put({ key: "riverside plaza", category: "gifts" })).status).toBe(200);
+    expect((await merchants()).find((m) => m.key === "riverside plaza")).toMatchObject({ category: "gifts", source: "yours" });
     expect((await insights()).body.categories.find((c) => c.key === "gifts")?.total).toBe(3000);
 
-    await put({ key: "overland park", category: null });
-    expect((await merchants()).find((m) => m.key === "overland park")).toMatchObject({ category: "uncategorized", source: "none" });
+    await put({ key: "riverside plaza", category: null });
+    expect((await merchants()).find((m) => m.key === "riverside plaza")).toMatchObject({ category: "uncategorized", source: "none" });
+  });
+
+  it("accepts not spending and recurring bill, and leaves those out of the report", async () => {
+    await Receipt.create({ storeName: "Maple Apartments SIGONFILE DRSS", receiptDate: new Date("2026-09-02"), grandTotal: 120000, tags: ["bank-import"] });
+    const before = (await insights()).body.money.flexible;
+
+    expect((await put({ key: "maple apartments sigonfile", category: "bill" })).status).toBe(200);
+    const after = await insights();
+    expect(after.body.money.flexible).toBe(before - 120000);
+    expect(after.body.coverage.matchedToFixed).toBe(1);
+    expect((await merchants()).find((m) => m.key === "maple apartments sigonfile")).toMatchObject({
+      name: "Maple Apartments Sigonfile",
+      category: "bill",
+      source: "yours",
+    });
+
+    expect((await put({ key: "riverside plaza", category: "transfer" })).status).toBe(200);
+    expect((await insights()).body.coverage.transfers).toEqual({ count: 1, total: 3000 });
+  });
+
+  it("shows recognized transfers as not spending without any rule", async () => {
+    await Receipt.create({ storeName: "DISCOVER E-PAYMENT 1234", receiptDate: new Date("2026-09-09"), grandTotal: 25000, tags: ["bank-import"] });
+    expect((await merchants()).find((m) => m.key === "discover e-payment")).toMatchObject({ category: "transfer", source: "store", suggested: "transfer" });
+    expect((await insights()).body.money.flexible).toBe(32840);
   });
 
   it("validates the category", async () => {

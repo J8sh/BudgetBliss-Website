@@ -1,9 +1,11 @@
 import {
   categoryFromText,
   guessMerchant,
-  type CategoryId,
+  isExclusion,
   type CategoryKey,
+  type ExclusionKind,
   type MerchantGuess,
+  type StoreChoice,
 } from "@/lib/finance/categories";
 import type { CategorySource } from "@/types/insights";
 
@@ -20,8 +22,10 @@ export interface SpendReceipt {
 export interface Allocation {
   merchant: MerchantGuess;
   source: CategorySource;
-  /** The receipt total split across categories; parts add up to grandTotal exactly */
+  /** The receipt total split across categories; parts add up to grandTotal exactly (empty when excluded) */
   parts: Array<{ category: CategoryKey; amount: number }>;
+  /** Set when the receipt isn't spending (a transfer) or is already counted (a recurring bill) */
+  excluded?: ExclusionKind;
 }
 
 /** Share of a mixed store's item value that must be categorized before items decide the split */
@@ -49,11 +53,13 @@ export function splitProportionally<K>(total: number, weights: Array<[K, number]
 
 /**
  * Decides which categories a receipt's money went to:
+ * 0. a store you marked "not spending" or "recurring bill", or a recognized transfer (card
+ *    payment, savings), isn't spending at all;
  * 1. a category you set for the store always wins;
  * 2. a store that sells across categories is split by its line items, when enough are categorized;
  * 3. otherwise the store's suggested category, else the items', else "uncategorized".
  */
-export function allocateReceipt(receipt: SpendReceipt, rules: ReadonlyMap<string, CategoryId>): Allocation {
+export function allocateReceipt(receipt: SpendReceipt, rules: ReadonlyMap<string, StoreChoice>): Allocation {
   const merchant = guessMerchant(receipt.storeName);
   const total = receipt.grandTotal;
   const whole = (category: CategoryKey, source: CategorySource): Allocation => ({
@@ -63,7 +69,9 @@ export function allocateReceipt(receipt: SpendReceipt, rules: ReadonlyMap<string
   });
 
   const yours = rules.get(merchant.key);
+  if (isExclusion(yours)) return { merchant, source: "yours", parts: [], excluded: yours };
   if (yours) return whole(yours, "yours");
+  if (merchant.excluded) return { merchant, source: "store", parts: [], excluded: merchant.excluded };
 
   const items = receipt.lineItems.map((item) => ({ amount: item.totalPrice, category: categoryFromText(item.category) }));
   const itemValue = items.reduce((s, i) => s + Math.abs(i.amount), 0);

@@ -12,6 +12,7 @@ jest.mock("@/lib/db/mongoose", () => ({
 
 import { auth } from "@/lib/auth/auth";
 import { Receipt } from "@/lib/models/Receipt";
+import { MerchantRule } from "@/lib/models/MerchantRule";
 import { Income } from "@/lib/models/Income";
 import { RecurringCost } from "@/lib/models/RecurringCost";
 import { GET as exportCsv } from "@/app/api/export/route";
@@ -29,7 +30,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([Receipt.deleteMany({}), Income.deleteMany({}), RecurringCost.deleteMany({})]);
+  await Promise.all([Receipt.deleteMany({}), Income.deleteMany({}), RecurringCost.deleteMany({}), MerchantRule.deleteMany({})]);
   (auth as jest.Mock).mockResolvedValue({ user: { email: "admin@test.com" } });
 });
 
@@ -444,5 +445,59 @@ describe("GET /api/receipts?source=", () => {
     expect(await names("photo")).toEqual(["Photo", "Bank+photo"]);
     expect(await names("bank")).toEqual(["Bank"]);
     expect(await names("manual")).toEqual(["Typed"]);
+  });
+});
+
+describe("bank imports leave out money that isn't spending", () => {
+  // Shapes from a real checking account export (Debit/Credit columns, M/D/YYYY dates)
+  const CHECKING = `Account,ChkRef,Debit,Credit,Balance,Date,Description
+100001,,,2000.00,,11/6/2026,ACME CORP PAYROLL
+100001,,1200.00,,,11/3/2026,Maple Apartments SIGONFILE H1YS
+100001,,20.00,,,11/2/2026,XX1111 POS PURCHASE AT SNACK KIOSK AUTO-R VENDCO MI WXYZ 024820
+100001,,75.00,,,10/29/2026,DISCOVER CAP ONE MOBILE PMT CA06B119E4D13A3
+100001,,250.00,,,10/9/2026,DISCOVER E-PAYMENT 1234
+100001,,90.00,,,10/19/2026,EVERGY METRO AUTOPAY 532139873232
+100001,,500.00,,,3/10/2026,HSA - UMB BANK HSA Cont HSA - UMB Bank
+100001,,,1.00,,10/15/2026,INTEREST
+`;
+
+  it("skips card payments and savings automatically", async () => {
+    const { data } = await runImport({ csv: CHECKING });
+    expect(data.mapping).toMatchObject({ date: "Date", description: "Description", debit: "Debit", credit: "Credit" });
+    const byDesc = Object.fromEntries(data.rows.map((r) => [r.description, r]));
+    expect(byDesc["DISCOVER E-PAYMENT 1234"]).toMatchObject({ status: "skip", message: "Looks like a card payment or transfer, so it isn't spending" });
+    expect(byDesc["DISCOVER CAP ONE MOBILE PMT CA06B119E4D13A3"]?.status).toBe("skip");
+    expect(byDesc["HSA - UMB BANK HSA Cont HSA - UMB Bank"]?.status).toBe("skip");
+    expect(byDesc["Maple Apartments SIGONFILE H1YS"]?.status).toBe("create");
+    // payroll and interest are deposits, skipped as before
+    expect(data.counts).toMatchObject({ create: 3, skip: 5 });
+  });
+
+  it("skips stores you marked as recurring bills or not spending", async () => {
+    await MerchantRule.create([
+      { key: "maple apartments sigonfile", category: "bill" },
+      { key: "evergy metro autopay", category: "bill" },
+    ]);
+    const { data } = await runImport({ csv: CHECKING, dryRun: false });
+    expect(data.written).toBe(1); // just the kiosk snack
+    const rent = data.rows.find((r) => r.description?.startsWith("Maple Apartments"));
+    expect(rent).toMatchObject({ status: "skip", message: "Already counted as a recurring bill" });
+  });
+
+  it("doesn't treat same-amount bank charges at different stores as one purchase", async () => {
+    await runImport({ csv: "Date,Description,Amount\n10/03/2026,ANTHROPIC* CLAUDE SUB,-20.00\n", dryRun: false });
+    const { data } = await runImport({
+      csv: "Date,Description,Amount\n10/05/2026,XX1111 POS PURCHASE AT SNACK KIOSK AUTO-R VENDCO MI WXYZ 065434,-20.00\n",
+    });
+    expect(data.rows[0]!.status).toBe("create");
+  });
+
+  it("doesn't let an imported card payment pass for a matching purchase", async () => {
+    await Receipt.create({ storeName: "DISCOVER E-PAYMENT 1234", receiptDate: new Date("2026-10-09"), grandTotal: 25000, tags: ["bank-import"] });
+    const csv = `Date,Description,Amount
+10/09/2026,BEST BUY 123,-250.00
+`;
+    const { data } = await runImport({ csv });
+    expect(data.rows[0]!.status).toBe("create");
   });
 });

@@ -3,15 +3,17 @@ import { Income } from "@/lib/models/Income";
 import { RecurringCost } from "@/lib/models/RecurringCost";
 import { MerchantRule } from "@/lib/models/MerchantRule";
 import { allocateReceipt, type SpendReceipt } from "@/lib/finance/allocate";
-import { guessMerchant, isCategoryId, type CategoryId } from "@/lib/finance/categories";
+import { isCategoryId, isExclusion, type StoreChoice } from "@/lib/finance/categories";
 import { addMonths, buildInsightsReport, monthOf, TREND_MONTHS } from "@/lib/finance/insights";
 import type { InsightsReport, MerchantSummary } from "@/types/insights";
 
 /** Database reads for the insights; the math lives in insights.ts */
 
-export async function loadRules(): Promise<Map<string, CategoryId>> {
+export async function loadRules(): Promise<Map<string, StoreChoice>> {
   const rules = await MerchantRule.find({}).select("key category").lean();
-  return new Map(rules.filter((r) => isCategoryId(r.category)).map((r) => [r.key, r.category]));
+  return new Map(
+    rules.filter((r) => isCategoryId(r.category) || isExclusion(r.category)).map((r) => [r.key, r.category]),
+  );
 }
 
 function toSpendReceipt(r: {
@@ -72,7 +74,7 @@ export async function loadInsightsReport(month: string, now: Date = new Date()):
 export async function loadMerchants(): Promise<MerchantSummary[]> {
   const [receipts, rules] = await Promise.all([Receipt.find({}).select(RECEIPT_FIELDS).lean(), loadRules()]);
 
-  const byKey = new Map<string, MerchantSummary & { nameCounts: Map<string, number> }>();
+  const byKey = new Map<string, MerchantSummary>();
   for (const raw of receipts) {
     const r = toSpendReceipt(raw);
     const allocation = allocateReceipt(r, rules);
@@ -82,14 +84,13 @@ export async function loadMerchants(): Promise<MerchantSummary[]> {
       {
         key: merchant.key,
         name: merchant.name,
-        category: allocation.parts[0]?.category ?? merchant.category ?? "uncategorized",
+        category: allocation.excluded ?? allocation.parts[0]?.category ?? merchant.category ?? "uncategorized",
         source: allocation.source,
-        suggested: guessMerchant(r.storeName).category,
+        suggested: merchant.category ?? merchant.excluded,
         mixed: merchant.mixed,
         visits: 0,
         total: 0,
         lastVisit: "",
-        nameCounts: new Map<string, number>(),
       };
     entry.visits += 1;
     entry.total += r.grandTotal;
@@ -97,15 +98,12 @@ export async function loadMerchants(): Promise<MerchantSummary[]> {
     if (date > entry.lastVisit) entry.lastVisit = date;
     // A store split by items shows as "items"; otherwise keep the strongest source seen
     if (allocation.source === "items") entry.source = "items";
-    entry.nameCounts.set(r.storeName, (entry.nameCounts.get(r.storeName) ?? 0) + 1);
     byKey.set(merchant.key, entry);
   }
 
   return [...byKey.values()]
-    .map(({ nameCounts, ...m }) => ({
+    .map((m) => ({
       ...m,
-      // Unrecognized stores show the spelling that appears most on receipts
-      name: m.suggested || m.source === "yours" ? m.name : [...nameCounts].sort((a, b) => b[1] - a[1])[0]![0],
       category: rules.get(m.key) ?? m.category,
       source: rules.has(m.key) ? ("yours" as const) : m.source,
     }))

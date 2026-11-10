@@ -1,5 +1,5 @@
 import { allocateReceipt, splitProportionally, type SpendReceipt } from "@/lib/finance/allocate";
-import type { CategoryId } from "@/lib/finance/categories";
+import type { CategoryId, StoreChoice } from "@/lib/finance/categories";
 
 function receipt(overrides: Partial<SpendReceipt>): SpendReceipt {
   return {
@@ -86,11 +86,35 @@ describe("allocateReceipt", () => {
   });
 
   it("marks unknown stores without categorized items as uncategorized", () => {
-    const a = allocateReceipt(receipt({ storeName: "Overland Park" }), noRules);
+    const a = allocateReceipt(receipt({ storeName: "Riverside Plaza" }), noRules);
     expect(a).toMatchObject({ source: "none", parts: [{ category: "uncategorized", amount: 10000 }] });
   });
 
   it("allocates nothing for a zero total", () => {
     expect(allocateReceipt(receipt({ grandTotal: 0 }), noRules).parts).toEqual([]);
+  });
+});
+
+describe("allocateReceipt: not spending", () => {
+  it("leaves out recognized transfers like card payments", () => {
+    const a = allocateReceipt(receipt({ storeName: "DISCOVER E-PAYMENT 1234", tags: ["bank-import"] }), noRules);
+    expect(a).toMatchObject({ excluded: "transfer", source: "store", parts: [] });
+  });
+
+  it("leaves out stores you marked as a recurring bill or not spending", () => {
+    const rules = new Map<string, StoreChoice>([
+      ["maple apartments sigonfile", "bill"],
+      ["venmo alex doe", "transfer"],
+    ]);
+    expect(allocateReceipt(receipt({ storeName: "Maple Apartments SIGONFILE H1YS" }), rules)).toMatchObject({ excluded: "bill", parts: [] });
+    expect(allocateReceipt(receipt({ storeName: "Maple Apartments SIGONFILE DRSS" }), rules)).toMatchObject({ excluded: "bill" });
+    expect(allocateReceipt(receipt({ storeName: "VENMO Alex Doe" }), rules)).toMatchObject({ excluded: "transfer" });
+  });
+
+  it("lets you count a recognized transfer as spending after all", () => {
+    const rules = new Map<string, StoreChoice>([["discover e-payment", "other"]]);
+    const a = allocateReceipt(receipt({ storeName: "DISCOVER E-PAYMENT 1234" }), rules);
+    expect(a.excluded).toBeUndefined();
+    expect(a.parts).toEqual([{ category: "other", amount: 10000 }]);
   });
 });

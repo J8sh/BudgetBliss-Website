@@ -1,4 +1,4 @@
-import type { CategoryId, CategoryKey, CategoryKind } from "@/lib/finance/categories";
+import type { CategoryKey, CategoryKind, ExclusionKind, StoreChoice } from "@/lib/finance/categories";
 
 /** All amounts are integer cents. Months are "YYYY-MM". */
 
@@ -120,8 +120,10 @@ export interface Coverage {
   uncategorizedMerchants: number;
   /** Receipts this month whose photo couldn't be read */
   needsReview: number;
-  /** Bank-imported charges counted as a recurring cost instead of day-to-day spending */
+  /** Bank-imported charges counted as a recurring bill instead of day-to-day spending */
   matchedToFixed: number;
+  /** Card payments, savings and other transfers, which aren't spending */
+  transfers: { count: number; total: number };
 }
 
 export interface InsightsReport {
@@ -149,10 +151,11 @@ export type CategorySource = "yours" | "store" | "items" | "none";
 export interface MerchantSummary {
   key: string;
   name: string;
-  category: CategoryKey;
+  /** A spending category, or an exclusion (not spending / recurring bill) */
+  category: CategoryKey | ExclusionKind;
   source: CategorySource;
-  /** Suggested category from the store name (shown when there's no rule of yours) */
-  suggested?: CategoryId;
+  /** Suggested category (or "transfer") from the store name, shown when there's no rule of yours */
+  suggested?: StoreChoice;
   mixed: boolean;
   visits: number;
   total: number;
