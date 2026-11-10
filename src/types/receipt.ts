@@ -52,6 +52,7 @@ export interface ExtractedReceipt {
     quantity: number;
     unitPrice: number; // decimal dollars
     totalPrice: number; // decimal dollars
+    category?: string | null;
   }>;
   subtotal: number | null;
   taxAmount: number | null;

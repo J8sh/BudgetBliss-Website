@@ -2,26 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  LayoutDashboard,
-  Receipt,
-  Upload,
-  History,
-  Settings,
-  ShieldCheck,
-  ArrowLeftRight,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/receipts", label: "Receipts", icon: Receipt },
-  { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/history", label: "History", icon: History },
-  { href: "/data", label: "Import & Export", icon: ArrowLeftRight },
-  { href: "/admin", label: "Admin", icon: ShieldCheck },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+import { NAV_ITEMS, isActivePath } from "./navItems";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -36,11 +18,12 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const isActive = pathname.startsWith(href);
+          const isActive = isActivePath(pathname, href);
           return (
             <Link
               key={href}
               href={href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
