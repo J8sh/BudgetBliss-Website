@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils/currency";
 import type { Receipt } from "@/types/receipt";
@@ -30,7 +31,13 @@ export function RecentReceiptsBlock() {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="drag-handle pb-2 shrink-0 flex flex-row items-center justify-between">
-        <CardTitle className="text-sm font-medium text-muted-foreground">Recent Receipts</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+          Recent Receipts
+          <InfoTip label="recent receipts">
+            The last receipts you added, newest first: photos, typed-in receipts and bank imports. Click one to see its
+            items or fix its details.
+          </InfoTip>
+        </CardTitle>
         <Link href="/receipts" className="text-xs text-primary flex items-center gap-1 hover:underline">
           View all <ArrowRight className="h-3 w-3" />
         </Link>

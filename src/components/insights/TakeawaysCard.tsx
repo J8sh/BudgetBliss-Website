@@ -2,6 +2,7 @@
 
 import { ArrowRight, CircleCheck, CircleAlert, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Button } from "@/components/ui/button";
 import type { Insight, InsightAction } from "@/types/insights";
 
@@ -19,6 +20,8 @@ const ACTION_LABELS: Record<InsightAction["type"], string> = {
 };
 
 interface TakeawaysCardProps {
+  /** What this card is, shown from an info icon next to the title */
+  info?: React.ReactNode;
   insights: Insight[];
   onAction: (action: InsightAction) => void;
   /** Show at most this many (the dashboard shows a few; the insights page shows all) */
@@ -28,12 +31,15 @@ interface TakeawaysCardProps {
 }
 
 /** The plain-language summary: a few sentences, most important first, each with a next step */
-export function TakeawaysCard({ insights, onAction, limit, title = "The short version", footer }: TakeawaysCardProps) {
+export function TakeawaysCard({ insights, onAction, limit, title = "The short version", footer, info }: TakeawaysCardProps) {
   const shown = limit ? insights.slice(0, limit) : insights;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
+        <CardTitle className="flex items-center gap-1.5 text-base">
+          {title}
+          {info && <InfoTip label={title}>{info}</InfoTip>}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
         <ul className="divide-y divide-border">

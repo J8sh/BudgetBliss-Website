@@ -1,14 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Upload, ArrowRight } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { StatBlock } from "@/components/dashboard/StatBlock";
-import { SpendAreaChart } from "@/components/dashboard/SpendAreaChart";
-import { TopStoresChart } from "@/components/dashboard/CategoryPieChart";
+import { SpendingChart } from "@/components/dashboard/SpendingChart";
 import { TopStoresListBlock } from "@/components/dashboard/TopStoresListBlock";
 import { RecentReceiptsBlock } from "@/components/dashboard/RecentReceiptsBlock";
 import { RecurringCostsBlock } from "@/components/dashboard/RecurringCostsBlock";
@@ -19,6 +18,8 @@ import { MonthGlanceDialog } from "@/components/insights/MonthGlanceDialog";
 import { MoneyFlowDialog } from "@/components/insights/ExplainDialogs";
 import { useInsights } from "@/hooks/useInsights";
 import type { InsightAction } from "@/types/insights";
+import type { StatRange } from "@/types/stats";
+import { STAT_RANGES } from "@/lib/finance/stats";
 import { useStats } from "@/hooks/useStats";
 import { useRecurring } from "@/hooks/useRecurring";
 import { useIncome } from "@/hooks/useIncome";
@@ -39,8 +40,51 @@ function getFormattedDate(): string {
   });
 }
 
+const RANGE_KEY = "bb-dashboard-range";
+const RANGE_EVENT = "bb-dashboard-range-change";
+
+/** Used when the browser blocks storage (some private windows), so the buttons still work */
+let rangeInMemory: StatRange | null = null;
+
+function readSavedRange(): StatRange {
+  try {
+    const saved = localStorage.getItem(RANGE_KEY);
+    if (saved && saved in STAT_RANGES) return saved as StatRange;
+  } catch {
+    // Storage unavailable: fall through to memory
+  }
+  return rangeInMemory ?? "30d";
+}
+
+function subscribeToRange(onChange: () => void) {
+  window.addEventListener(RANGE_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(RANGE_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** The chart range, remembered on this device (server render uses the default) */
+function useSavedRange(): [StatRange, (r: StatRange) => void] {
+  const range = useSyncExternalStore(subscribeToRange, readSavedRange, () => "30d" as StatRange);
+  function update(r: StatRange) {
+    rangeInMemory = r;
+    try {
+      localStorage.setItem(RANGE_KEY, r);
+    } catch {
+      // Not remembered across visits
+    }
+    window.dispatchEvent(new Event(RANGE_EVENT));
+  }
+  return [range, update];
+}
+
+const SPENDING_NOTE = "Only day-to-day spending: recurring bills and transfers like credit card payments aren't included.";
+
 export function HomepageClient() {
-  const { data, isLoading } = useStats();
+  const [range, setRange] = useSavedRange();
+  const { data, isLoading } = useStats(range);
   const { summary: recurringSummary, isLoading: recurringLoading } = useRecurring();
   const { summary: incomeSummary, isLoading: incomeLoading } = useIncome();
   const { report, isLoading: insightsLoading } = useInsights();
@@ -55,7 +99,6 @@ export function HomepageClient() {
   }
 
   const summary = data?.summary;
-  const dailySpend = data?.dailySpend ?? [];
   const topStores = data?.topStores ?? [];
 
   return (
@@ -80,23 +123,59 @@ export function HomepageClient() {
 
       {/* Spending Stat Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatBlock title="Today" value={summary?.today ?? 0} isLoading={isLoading} />
-        <StatBlock title="This Week" value={summary?.week ?? 0} isLoading={isLoading} />
+        <StatBlock
+          title="Today"
+          value={summary?.today ?? 0}
+          isLoading={isLoading && !summary}
+          info={<>What you&apos;ve spent today. {SPENDING_NOTE}</>}
+        />
+        <StatBlock
+          title="This Week"
+          value={summary?.week ?? 0}
+          isLoading={isLoading && !summary}
+          info={<>Spending since Sunday. {SPENDING_NOTE}</>}
+        />
         <StatBlock
           title="This Month"
           value={summary?.month ?? 0}
           previousValue={report?.pace?.sameDayLastMonth}
           trendLabel="than this point last month"
-          isLoading={isLoading}
+          isLoading={isLoading && !summary}
           onClick={() => setGlanceOpen(true)}
+          info={
+            <>
+              Spending since the 1st, compared with the same day last month. {SPENDING_NOTE} Click the card for the
+              breakdown by category.
+            </>
+          }
         />
-        <StatBlock title="This Year" value={summary?.year ?? 0} isLoading={isLoading} />
+        <StatBlock
+          title="This Year"
+          value={summary?.year ?? 0}
+          isLoading={isLoading && !summary}
+          info={
+            <>
+              Spending since January 1. {SPENDING_NOTE} Your bills are on top of this: see Monthly Recurring, or the
+              Insights page for the full picture.
+            </>
+          }
+        />
       </div>
 
       {/* Financial Health Row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatBlock title="Monthly Recurring" value={recurringSummary?.monthlyTotal ?? 0} isLoading={recurringLoading} />
-        <StatBlock title="Monthly Income" value={incomeSummary?.monthlyTotal ?? 0} isLoading={incomeLoading} />
+        <StatBlock
+          title="Monthly Recurring"
+          value={recurringSummary?.monthlyTotal ?? 0}
+          isLoading={recurringLoading}
+          info="Your recurring bills (rent, utilities, subscriptions) added up as a monthly amount. Yearly or weekly bills are converted. Edit them in Recurring Costs below."
+        />
+        <StatBlock
+          title="Monthly Income"
+          value={incomeSummary?.monthlyTotal ?? 0}
+          isLoading={incomeLoading}
+          info="Your income sources added up as a monthly amount, from Income Sources below. Use take-home pay (after taxes) so the other numbers match what reaches your bank."
+        />
         <LeftOverBlock money={report?.money} isLoading={insightsLoading} onClick={() => setFlowOpen(true)} />
       </div>
 
@@ -104,6 +183,7 @@ export function HomepageClient() {
       {report && report.insights.length > 0 && (
         <TakeawaysCard
           title="This month so far"
+          info="A few plain-language observations about this month: how your spending compares, where most of it went, and anything worth a look. Insights has the full review."
           insights={report.insights}
           limit={3}
           onAction={handleInsightAction}
@@ -116,20 +196,18 @@ export function HomepageClient() {
       )}
 
       {/* Charts Row */}
+      {/* Charts row: both follow the chart's range; the chart stretches to the row's height */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* Spend trend — takes 2/3 of the row */}
         <div className="lg:col-span-2">
-          <SpendAreaChart data={dailySpend} isLoading={isLoading} />
+          <SpendingChart series={data?.series} range={range} onRangeChange={setRange} isLoading={isLoading} />
         </div>
-
-        {/* Top stores — takes 1/3 */}
-        <div className="flex flex-col gap-4">
-          <div className="flex-1">
-            <TopStoresChart stores={topStores} isLoading={isLoading} />
-          </div>
-          <div className="flex-1">
-            <TopStoresListBlock stores={topStores} isLoading={isLoading} />
-          </div>
+        <div>
+          <TopStoresListBlock
+            stores={topStores}
+            isLoading={isLoading}
+            title={`Top stores, last ${STAT_RANGES[range].label}`}
+            limit={8}
+          />
         </div>
       </div>
 

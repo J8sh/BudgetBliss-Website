@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2, RepeatIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -53,7 +54,14 @@ export function RecurringCostsBlock({ dragHandleClassName }: RecurringCostsBlock
         <CardHeader className={`pb-2 shrink-0 flex flex-row items-center justify-between ${dragHandleClassName ?? ""}`}>
           <div className="flex items-center gap-2">
             <RepeatIcon className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium text-muted-foreground">Recurring Costs</CardTitle>
+            <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+              Recurring Costs
+              <InfoTip label="recurring costs">
+                Bills that repeat on a schedule, like rent, utilities and subscriptions. They count every month even
+                before the charge shows up, and bank charges for the same bill aren&apos;t counted a second time. Use + to
+                add one; pause one you no longer pay instead of deleting it.
+              </InfoTip>
+            </CardTitle>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={openAdd} title="Add recurring cost">
             <Plus className="h-4 w-4" />

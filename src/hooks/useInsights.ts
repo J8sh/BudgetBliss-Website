@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { InsightsReport, MerchantSummary } from "@/types/insights";
+import { localDateString } from "@/lib/utils/dates";
 
 interface UseInsightsResult {
   report: InsightsReport | null;
@@ -23,7 +24,7 @@ export function useInsights(month?: string): UseInsightsResult {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/insights${month ? `?month=${month}` : ""}`);
+        const res = await fetch(`/api/insights?today=${localDateString()}${month ? `&month=${month}` : ""}`);
         if (!res.ok) throw new Error(`Insights fetch failed: ${res.status}`);
         const data = (await res.json()) as InsightsReport;
         if (!cancelled) setReport(data);
