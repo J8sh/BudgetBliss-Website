@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { StatsResponse } from "@/types/stats";
+import type { StatRange, StatsResponse } from "@/types/stats";
+import { localDateString } from "@/lib/utils/dates";
 
 interface UseStatsResult {
   data: StatsResponse | null;
@@ -10,7 +11,8 @@ interface UseStatsResult {
   refetch: () => void;
 }
 
-export function useStats(): UseStatsResult {
+/** Dashboard stats; `range` sets the spending chart and top stores. Keeps the last data while a new range loads. */
+export function useStats(range: StatRange = "30d"): UseStatsResult {
   const [data, setData] = useState<StatsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export function useStats(): UseStatsResult {
       setIsLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/stats");
+        const res = await fetch(`/api/stats?range=${range}&today=${localDateString()}`);
         if (!res.ok) throw new Error(`Stats fetch failed: ${res.status}`);
         const json = (await res.json()) as StatsResponse;
         if (!cancelled) setData(json);
@@ -36,7 +38,7 @@ export function useStats(): UseStatsResult {
 
     void fetchStats();
     return () => { cancelled = true; };
-  }, [tick]);
+  }, [range, tick]);
 
   return { data, isLoading, error, refetch: () => setTick((t) => t + 1) };
 }

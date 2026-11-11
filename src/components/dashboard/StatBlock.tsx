@@ -2,6 +2,7 @@
 
 import { TrendingUp, TrendingDown, Minus, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,8 @@ interface StatBlockProps {
   trendLabel?: string;
   /** Makes the card open an explanation */
   onClick?: () => void;
+  /** What the number means, shown from an info icon next to the title */
+  info?: React.ReactNode;
 }
 
 export function StatBlock({
@@ -28,6 +31,7 @@ export function StatBlock({
   dragHandleClassName,
   trendLabel = "than last period",
   onClick,
+  info,
 }: StatBlockProps) {
   const trend =
     previousValue != null
@@ -55,7 +59,10 @@ export function StatBlock({
     >
       <CardHeader className={cn("pb-2 shrink-0", dragHandleClassName)}>
         <CardTitle className="flex items-center justify-between text-sm font-medium text-muted-foreground">
-          {title}
+          <span className="flex items-center gap-1.5">
+            {title}
+            {info && <InfoTip label={title}>{info}</InfoTip>}
+          </span>
           {onClick && <ChevronRight className="h-4 w-4" aria-hidden />}
         </CardTitle>
       </CardHeader>

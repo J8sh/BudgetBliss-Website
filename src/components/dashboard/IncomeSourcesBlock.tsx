@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, Pencil, Trash2, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils/currency";
@@ -69,7 +70,14 @@ export function IncomeSourcesBlock({ dragHandleClassName }: IncomeSourcesBlockPr
         <CardHeader className={`pb-2 shrink-0 flex flex-row items-center justify-between ${dragHandleClassName ?? ""}`}>
           <div className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
-            <CardTitle className="text-sm font-medium text-muted-foreground">Income Sources</CardTitle>
+            <CardTitle className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+              Income Sources
+              <InfoTip label="income sources">
+                Your take-home pay and other regular income, converted to a monthly amount. It&apos;s used for &quot;Left this
+                month&quot; and the needs / wants / savings check. Paid every two weeks? Enter the yearly total with the
+                &quot;yearly&quot; frequency so the months with a third paycheck are counted.
+              </InfoTip>
+            </CardTitle>
           </div>
           <Button variant="ghost" size="icon-sm" onClick={openAdd} title="Add income source">
             <Plus className="h-4 w-4" />

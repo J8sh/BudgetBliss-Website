@@ -1,4 +1,5 @@
 import { allocateReceipt, type SpendReceipt } from "@/lib/finance/allocate";
+import { classifyReceipts } from "@/lib/finance/spending";
 import {
   CATEGORIES,
   categoryFromText,
@@ -144,51 +145,40 @@ export function buildInsightsReport(input: InsightsInput): InsightsReport {
       matchedToFixed: 0,
     });
   }
-  for (const r of input.receipts) buckets.get(monthOf(r.receiptDate))?.receipts.push(r);
+  const classified = classifyReceipts(input.receipts, rules, fixedItems.map((f) => f.monthly));
 
-  for (const bucket of buckets.values()) {
-    // A bank-imported charge for the same amount as a recurring cost is that cost, already counted as fixed
-    const unmatchedFixed = fixedItems.filter((f) => f.monthly > 0).map((f) => f.monthly);
-    for (const r of bucket.receipts) {
-      const allocation = allocateReceipt(r, rules);
-      if (allocation.excluded === "transfer") {
-        bucket.transfers.count++;
-        bucket.transfers.total += r.grandTotal;
-        continue;
-      }
-      if (allocation.excluded === "bill") {
-        bucket.matchedToFixed++;
-        continue;
-      }
-
-      if (r.tags.includes("bank-import")) {
-        const i = unmatchedFixed.findIndex((amount) => Math.abs(amount - r.grandTotal) <= Math.max(100, amount * 0.01));
-        if (i >= 0) {
-          unmatchedFixed.splice(i, 1);
-          bucket.matchedToFixed++;
-          continue;
-        }
-      }
-
-      bucket.spending.push(r);
-      for (const part of allocation.parts) {
-        bucket.flexibleByCategory.set(part.category, (bucket.flexibleByCategory.get(part.category) ?? 0) + part.amount);
-        const merchants = bucket.merchantByCategory.get(part.category) ?? new Map<string, MerchantTotal>();
-        const m = merchants.get(allocation.merchant.key) ?? { key: allocation.merchant.key, name: allocation.merchant.name, total: 0, visits: 0 };
-        m.total += part.amount;
-        m.visits += 1;
-        merchants.set(allocation.merchant.key, m);
-        bucket.merchantByCategory.set(part.category, merchants);
-        bucket.purchases.push({
-          receiptId: r.id,
-          storeName: r.storeName,
-          date: r.receiptDate.toISOString().slice(0, 10),
-          amount: part.amount,
-          category: part.category,
-        });
-      }
-      bucket.flexible += r.grandTotal;
+  for (const { receipt: r, allocation, kind } of classified) {
+    const bucket = buckets.get(monthOf(r.receiptDate));
+    if (!bucket) continue;
+    bucket.receipts.push(r);
+    if (kind === "transfer") {
+      bucket.transfers.count++;
+      bucket.transfers.total += r.grandTotal;
+      continue;
     }
+    if (kind === "bill") {
+      bucket.matchedToFixed++;
+      continue;
+    }
+
+    bucket.spending.push(r);
+    for (const part of allocation.parts) {
+      bucket.flexibleByCategory.set(part.category, (bucket.flexibleByCategory.get(part.category) ?? 0) + part.amount);
+      const merchants = bucket.merchantByCategory.get(part.category) ?? new Map<string, MerchantTotal>();
+      const m = merchants.get(allocation.merchant.key) ?? { key: allocation.merchant.key, name: allocation.merchant.name, total: 0, visits: 0 };
+      m.total += part.amount;
+      m.visits += 1;
+      merchants.set(allocation.merchant.key, m);
+      bucket.merchantByCategory.set(part.category, merchants);
+      bucket.purchases.push({
+        receiptId: r.id,
+        storeName: r.storeName,
+        date: r.receiptDate.toISOString().slice(0, 10),
+        amount: part.amount,
+        category: part.category,
+      });
+    }
+    bucket.flexible += r.grandTotal;
   }
 
   const current = buckets.get(month)!;

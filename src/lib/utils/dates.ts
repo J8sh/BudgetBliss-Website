@@ -60,3 +60,29 @@ export function isSameDay(a: Date, b: Date): boolean {
     a.getDate() === b.getDate()
   );
 }
+
+/** The viewer's calendar date (YYYY-MM-DD) in their own time zone, for sending to the API */
+export function localDateString(date: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * "Now" for server-side date math, as noon UTC on the viewer's calendar date.
+ *
+ * Receipt dates are stored as UTC midnight of their calendar date, so the server's own UTC clock
+ * runs a day ahead for viewers west of UTC in the evening (and a day behind east of UTC in the
+ * morning): "today" would come out empty. The browser sends its local date instead; it's only
+ * trusted within a day of the server clock, since no time zone is further apart than that.
+ */
+export function viewerNow(today: string | undefined, serverNow: Date = new Date()): Date {
+  const match = today ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(today) : null;
+  if (match) {
+    const viewer = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+    const serverNoon = Date.UTC(serverNow.getUTCFullYear(), serverNow.getUTCMonth(), serverNow.getUTCDate(), 12);
+    if (!Number.isNaN(viewer.getTime()) && Math.abs(viewer.getTime() - serverNoon) <= DAY_MS) return viewer;
+  }
+  return serverNow;
+}

@@ -6,7 +6,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useInsights } from "@/hooks/useInsights";
-import { addMonths, monthLabel, monthOf } from "@/lib/finance/insights";
+import { addMonths, monthLabel } from "@/lib/finance/insights";
+import { localDateString } from "@/lib/utils/dates";
 import { formatWholeDollars } from "@/lib/utils/currency";
 import type { CategoryKey } from "@/lib/finance/categories";
 import type { InsightAction } from "@/types/insights";
@@ -25,7 +26,7 @@ const selectClass = "h-8 rounded-lg border border-input bg-background px-2 text-
 export function InsightsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const thisMonth = monthOf(new Date());
+  const thisMonth = localDateString().slice(0, 7);
   const requested = searchParams.get("month");
   const month = requested && /^\d{4}-\d{2}$/.test(requested) ? requested : thisMonth;
 

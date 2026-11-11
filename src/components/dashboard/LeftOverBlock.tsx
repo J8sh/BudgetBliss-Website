@@ -2,6 +2,7 @@
 
 import { ChevronRight, PiggyBank } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTip } from "@/components/ui/info-tip";
 import { formatWholeDollars } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 import type { MoneyFlow } from "@/types/insights";
@@ -38,6 +39,10 @@ export function LeftOverBlock({ money, isLoading, onClick }: LeftOverBlockProps)
           <span className="flex items-center gap-1.5">
             <PiggyBank className="h-3.5 w-3.5" aria-hidden />
             Left this month
+            <InfoTip label="left this month">
+              Your monthly income minus recurring bills minus what you&apos;ve spent so far this month. It shrinks as the
+              month goes on; what&apos;s left at the end is what you saved. Click the card for the math.
+            </InfoTip>
           </span>
           <ChevronRight className="h-4 w-4" aria-hidden />
         </CardTitle>

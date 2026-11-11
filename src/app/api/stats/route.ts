@@ -1,134 +1,68 @@
-import { NextResponse } from "next/server";
-import type { PipelineStage } from "mongoose";
+import { type NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { auth } from "@/lib/auth/auth";
 import { connectDB } from "@/lib/db/mongoose";
 import { Receipt } from "@/lib/models/Receipt";
+import { RecurringCost } from "@/lib/models/RecurringCost";
 import { logger } from "@/lib/logger";
-import {
-  startOfDay,
-  endOfDay,
-  startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
-  startOfYear,
-  endOfYear,
-  toISODateString,
-} from "@/lib/utils/dates";
-import type { StatsResponse } from "@/types/stats";
+import { loadRules } from "@/lib/finance/loadInsights";
+import { toMonthly } from "@/lib/finance/insights";
+import { classifyReceipts } from "@/lib/finance/spending";
+import { buildStats, DEFAULT_RANGE, statsWindowStart } from "@/lib/finance/stats";
+import { viewerNow } from "@/lib/utils/dates";
+import type { StatRange } from "@/types/stats";
 
-export async function GET() {
+const QuerySchema = z.object({
+  range: z.enum(["30d", "60d", "3m", "6m", "1y"]).default(DEFAULT_RANGE),
+  /** The viewer's local calendar date, so "today" matches theirs rather than the server's UTC date */
+  today: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+    .optional(),
+});
+
+/** GET /api/stats?range=30d|60d|3m|6m|1y&today=YYYY-MM-DD: dashboard totals, spending chart and top stores */
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
   }
 
   try {
+    const { range, today } = QuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams.entries()));
     await connectDB();
 
-    const now = new Date();
-
-    // ─── Summary (day / week / month / year) ────────────────────────────────────
-    const summaryPipeline = [
-      {
-        $facet: {
-          today: [
-            { $match: { receiptDate: { $gte: startOfDay(now), $lte: endOfDay(now) } } },
-            { $group: { _id: null, total: { $sum: "$grandTotal" } } },
-          ],
-          week: [
-            { $match: { receiptDate: { $gte: startOfWeek(now), $lte: endOfWeek(now) } } },
-            { $group: { _id: null, total: { $sum: "$grandTotal" } } },
-          ],
-          month: [
-            { $match: { receiptDate: { $gte: startOfMonth(now), $lte: endOfMonth(now) } } },
-            { $group: { _id: null, total: { $sum: "$grandTotal" } } },
-          ],
-          year: [
-            { $match: { receiptDate: { $gte: startOfYear(now), $lte: endOfYear(now) } } },
-            { $group: { _id: null, total: { $sum: "$grandTotal" } } },
-          ],
-        },
-      },
-    ];
-
-    // ─── Daily spend (last 30 days) ───────────────────────────────────────────────
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(now.getDate() - 29);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-    const dailyPipeline = [
-      { $match: { receiptDate: { $gte: thirtyDaysAgo, $lte: endOfDay(now) } } },
-      {
-        $group: {
-          _id: {
-            year: { $year: "$receiptDate" },
-            month: { $month: "$receiptDate" },
-            day: { $dayOfMonth: "$receiptDate" },
-          },
-          total: { $sum: "$grandTotal" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
-    ];
-
-    // ─── Top stores (current month) ───────────────────────────────────────────────
-    const topStoresPipeline = [
-      { $match: { receiptDate: { $gte: startOfMonth(now), $lte: endOfMonth(now) } } },
-      { $group: { _id: "$storeName", total: { $sum: "$grandTotal" }, count: { $sum: 1 } } },
-      { $sort: { total: -1 } },
-      { $limit: 8 },
-    ];
-
-    const [summaryResult, dailyResult, topStoresResult] = await Promise.all([
-      Receipt.aggregate(summaryPipeline as PipelineStage[]),
-      Receipt.aggregate(dailyPipeline as PipelineStage[]),
-      Receipt.aggregate(topStoresPipeline as PipelineStage[]),
+    const now = viewerNow(today);
+    const [receipts, rules, recurring] = await Promise.all([
+      Receipt.find({ receiptDate: { $gte: statsWindowStart(now, range as StatRange) } })
+        .select("_id storeName receiptDate grandTotal tags lineItems.name lineItems.totalPrice lineItems.category")
+        .sort({ receiptDate: 1 })
+        .lean(),
+      loadRules(),
+      RecurringCost.find({ isActive: true }).select("amount frequency").lean(),
     ]);
 
-    const summary = summaryResult[0] as {
-      today: Array<{ total: number }>;
-      week: Array<{ total: number }>;
-      month: Array<{ total: number }>;
-      year: Array<{ total: number }>;
-    } | undefined;
+    const classified = classifyReceipts(
+      receipts.map((r) => ({
+        id: r._id.toString(),
+        storeName: r.storeName,
+        receiptDate: r.receiptDate,
+        grandTotal: r.grandTotal,
+        tags: r.tags ?? [],
+        lineItems: (r.lineItems ?? []).map((i) => ({ name: i.name, totalPrice: i.totalPrice, category: i.category })),
+      })),
+      rules,
+      recurring.map((c) => toMonthly(c.amount, c.frequency)),
+    );
 
-    // Build 30-day array with zeros for missing days
-    const dailyMap = new Map<string, { total: number; count: number }>();
-    for (const entry of dailyResult as Array<{
-      _id: { year: number; month: number; day: number };
-      total: number;
-      count: number;
-    }>) {
-      const date = new Date(entry._id.year, entry._id.month - 1, entry._id.day);
-      dailyMap.set(toISODateString(date), { total: entry.total, count: entry.count });
-    }
-
-    const dailySpend = Array.from({ length: 30 }, (_, i) => {
-      const d = new Date(thirtyDaysAgo);
-      d.setDate(thirtyDaysAgo.getDate() + i);
-      const dateStr = toISODateString(d);
-      const entry = dailyMap.get(dateStr);
-      return { date: dateStr, total: entry?.total ?? 0, count: entry?.count ?? 0 };
-    });
-
-    const response: StatsResponse = {
-      summary: {
-        today: summary?.today[0]?.total ?? 0,
-        week: summary?.week[0]?.total ?? 0,
-        month: summary?.month[0]?.total ?? 0,
-        year: summary?.year[0]?.total ?? 0,
-      },
-      dailySpend,
-      categoryBreakdown: [], // future: line item categories
-      topStores: (topStoresResult as Array<{ _id: string; total: number; count: number }>).map(
-        (s) => ({ storeName: s._id, total: s.total, count: s.count }),
-      ),
-    };
-
-    return NextResponse.json(response);
+    return NextResponse.json(buildStats(classified, now, range as StatRange), { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Invalid range", code: "VALIDATION_ERROR", details: err.flatten().fieldErrors },
+        { status: 400 },
+      );
+    }
     logger.error({ error: err }, "GET /api/stats failed");
     return NextResponse.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, { status: 500 });
   }
